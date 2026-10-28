@@ -176,6 +176,32 @@ func _ready() -> void:
 	await shot("21_carrying_pizza")
 	main.carry_preview = ""
 	main.player.set_carrying("")
+	# Mid-jump, seen from the side.
+	main.player.yaw = main.player.facing() + PI / 2.0
+	main.player.pitch = -0.1
+	await frames(10)
+	Input.action_press("jump")
+	await get_tree().physics_frame
+	Input.action_release("jump")
+	for i in 18:
+		await get_tree().physics_frame
+	# Freeze him mid-air: rendering here is slower than real time.
+	get_tree().paused = true
+	await shot("24_jump")
+	get_tree().paused = false
+	await frames(90)
+	# The full map and the phone's Maps app, with a route to the Route 40 strip.
+	var dest: Dictionary = main.town.places.filter(func(pl): return pl.name.begins_with("Chick"))[0]
+	main.set_waypoint(dest.pos, dest.name)
+	main.pause_menu.open_map()
+	await frames(5)
+	await shot("22_full_map")
+	main.pause_menu.close()
+	main.phone.open_app("maps")
+	await frames(5)
+	await shot("23_phone_map")
+	main.phone.close()
+	main.map_waypoint = {}
 	Game.weather_override = ""
 	Game.minute = 21 * 60.0
 	main.player.global_position = main.town.spawn_point

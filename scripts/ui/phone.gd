@@ -407,17 +407,38 @@ func _garage() -> void:
 
 
 func _maps() -> void:
-	_header("Maps", Color(0.2, 0.45, 0.75), "Tap a place to set a GPS beacon.")
+	_header("Maps", Color(0.2, 0.45, 0.75), "Tap an icon or a place to set your GPS. Full map: %s." % Game.key("map"))
+	var m := WorldMap.new()
+	m.main = main
+	m.show_street_names = false
+	m.custom_minimum_size = Vector2(0, 280)
+	m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	m.place_picked.connect(func(p): _pick_place(p))
+	_screen.add_child(m)
+	var key := _card()
+	WorldMap.legend(key, 2, 11)
 	if not main.map_waypoint.is_empty():
 		_btn(_screen, "Clear route (%s)" % main.map_waypoint.label, func():
 			main.map_waypoint = {}
+			main.refresh_gps()
 			_rebuild(), Color(0.4, 0.2, 0.2))
-	if Game.home_id != "" and main.town.homes.has(Game.home_id):
-		var hd: Dictionary = main.town.homes[Game.home_id]
-		_btn(_screen, "🏠 Home", func(): main.set_waypoint(hd.door, "Home"), Color(0.35, 0.25, 0.45))
-	for p in main.town.places:
-		var place: Dictionary = p
-		_btn(_screen, place.name, func(): main.set_waypoint(place.pos, place.name))
+	var here: Vector3 = main.actor_position()
+	for kind in WorldMap.KINDS:
+		var group: Array = m.places().filter(func(p): return p.get("kind", "") == kind)
+		if group.is_empty():
+			continue
+		group.sort_custom(func(a, b): return here.distance_to(a.pos) < here.distance_to(b.pos))
+		var k: Array = WorldMap.KINDS[kind]
+		_lbl(_screen, "%s  %s" % [k[1], k[0]], 14, k[2])
+		for p in group:
+			var place: Dictionary = p
+			var b := _btn(_screen, "%s   %.1f mi" % [place.name, here.distance_to(place.pos) / GameData.METERS_PER_MILE], func(): _pick_place(place))
+			b.add_theme_font_size_override("font_size", 13)
+
+
+func _pick_place(place: Dictionary) -> void:
+	main.set_waypoint(place.pos, place.name)
+	_rebuild()
 
 
 func _me() -> void:

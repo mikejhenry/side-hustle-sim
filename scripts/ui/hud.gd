@@ -325,7 +325,7 @@ E / X: interact, get in or out of the car
 Tab or P / Y: phone (gig apps, bank, garage, maps)     A: pick   B: back
 C / LB: driving camera (first person / chase)     M / D-pad up: mirror mode
 L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
-Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
+G / D-pad right: full map     Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
 F5: save        F9: load
 
 THE LAW

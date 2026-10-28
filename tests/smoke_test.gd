@@ -112,6 +112,8 @@ func _ready() -> void:
 	await _light_tests(tr)
 	await _strip_tests()
 	await _weather_tests()
+	await _map_tests()
+	await _jump_tests()
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -642,3 +644,69 @@ func _use_nearest_with(text: String, near_pos: Vector3, radius: float) -> void:
 	check(main._current == best, "main picks '%s'" % best.get_prompt())
 	best.use()
 	await frames(2)
+
+
+func _map_tests() -> void:
+	print("Map")
+	var kinds := {}
+	for p in main.town.places:
+		kinds[p.get("kind", "")] = true
+	check(not kinds.has("") and kinds.has("food") and kinds.has("gas") and kinds.has("flex") and kinds.has("restroom"),
+		"every place has a map icon (%s)" % str(kinds.keys()))
+	main.map_waypoint = {}
+	print("  window ", get_viewport().get_visible_rect().size)
+	get_window().size = Vector2i(1600, 900)
+	main.pause_menu.open_map()
+	await frames(3)
+	var view: WorldMap = main.pause_menu._map_view
+	check(get_tree().paused and main.pause_menu._map.visible and view.size.x > 400, "G opens the full map (%dx%d)" % [view.size.x, view.size.y])
+	var gas: Dictionary = main.town.places.filter(func(p): return p.kind == "gas")[0]
+	var at := view.to_map(gas.pos)
+	check(Rect2(Vector2.ZERO, view.size).has_point(at), "gas station icon is on the map")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = at
+	view._gui_input(click)
+	await frames(2)
+	check(main.map_waypoint.get("label", "") == gas.name and main.gps.route.size() > 1, "clicking an icon sets the GPS and draws a route while paused")
+	var back := InputEventAction.new()
+	back.action = "back"
+	back.pressed = true
+	Input.parse_input_event(back)
+	await frames(3)
+	check(not main.pause_menu.is_open and not get_tree().paused, "Back closes the map and resumes")
+	main.phone.open_app("maps")
+	await frames(3)
+	var phone_maps: Array = main.phone._screen.find_children("*", "WorldMap", true, false)
+	check(phone_maps.size() == 1 and phone_maps[0].size.y >= 280, "phone Maps app shows the map")
+	main.phone.close()
+	main.map_waypoint = {}
+	main.refresh_gps()
+
+
+func _jump_tests() -> void:
+	print("Jump")
+	if main.is_driving():
+		main.exit_car()
+	var p: Player = main.player
+	p.global_position = main.town.spawn_point + Vector3(0, 0.2, 0)
+	await frames(30)
+	var h: Humanoid = p._human
+	Input.action_press("jump")
+	await get_tree().physics_frame
+	Input.action_release("jump")
+	var peak_air := 0.0
+	for i in 30:
+		await get_tree().physics_frame
+		peak_air = maxf(peak_air, h._air)
+	check(peak_air > 0.9, "jumping goes into the split-leg pose (%.2f)" % peak_air)
+	var landed := false
+	for i in 120:
+		await get_tree().physics_frame
+		if p.is_on_floor() and h._land > 0.0:
+			landed = true
+			break
+	check(landed, "landing bends the knees")
+	await frames(60)
+	check(h._air < 0.05, "back to normal after landing")

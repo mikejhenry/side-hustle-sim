@@ -398,6 +398,9 @@ func _input(event: InputEvent) -> void:
 		elif event.is_action_pressed("pause"):
 			pause_menu.open()
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("map") and not hud.menu_open and not phone.is_open:
+		pause_menu.open_map()
+		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("help"):
 		hud.toggle_help()
 	elif event.is_action_pressed("save_game"):
@@ -470,9 +473,26 @@ func on_phone_toggled(_open: bool) -> void:
 
 # --- Actions used by world objects and the phone ----------------------------------------
 
+## Where the GPS is taking you: the active job first, then a map waypoint, then the tutorial.
+func nav_target() -> Dictionary:
+	var t := Gigs.target()
+	if t.is_empty():
+		t = map_waypoint
+	if t.is_empty() and tutorial:
+		t = tutorial.target()
+	return t
+
+
 func set_waypoint(pos: Vector3, label: String) -> void:
 	map_waypoint = {"pos": pos, "label": label}
 	hud.toast("GPS set: " + label, "info")
+	refresh_gps()
+
+
+## Recompute the route now (the map shows it even while the game is paused).
+func refresh_gps() -> void:
+	_gps_timer = 0.0
+	_update_gps(0.0, nav_target())
 
 
 func sleep_menu(quality: float) -> void:

@@ -770,6 +770,7 @@ func _setup_input() -> void:
 	_bind("headlights", [KEY_L], [JOY_BUTTON_RIGHT_SHOULDER])
 	_bind("camera_toggle", [KEY_C], [JOY_BUTTON_LEFT_SHOULDER])
 	_bind("mirrors", [KEY_M], [JOY_BUTTON_DPAD_UP])
+	_bind("map", [KEY_G], [JOY_BUTTON_DPAD_RIGHT])
 	_bind("help", [KEY_F1], [JOY_BUTTON_BACK])
 	_bind("save_game", [KEY_F5])
 	_bind("load_game", [KEY_F9])
@@ -808,7 +809,7 @@ var using_pad := false
 ## whichever device you touched last.
 const KEY_NAMES := {
 	"interact": ["E", "X"], "phone": ["Tab", "Y"], "pause": ["Esc", "Start"], "back": ["Esc", "B"],
-	"help": ["F1", "Back"], "mirrors": ["M", "D-pad up"], "camera_toggle": ["C", "LB"],
+	"help": ["F1", "Back"], "mirrors": ["M", "D-pad up"], "map": ["G", "D-pad right"], "camera_toggle": ["C", "LB"],
 	"headlights": ["L", "RB"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
 	"handbrake": ["Space", "A"], "sprint": ["Shift", "L3"], "jump": ["Space", "A"],
 	"gas": ["W", "RT"], "brake": ["S", "LT"], "move": ["WASD", "the left stick"],

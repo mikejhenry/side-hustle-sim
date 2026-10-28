@@ -210,8 +210,10 @@ func _register_address(lot: Node3D, addr_name: String, door_local: Vector3) -> D
 	return addr
 
 
-func _place(place_name: String, lot: Node3D, door_local: Vector3) -> Dictionary:
-	var p := {"name": place_name, "door": lot.to_global(door_local), "curb": _curb(lot), "pos": lot.to_global(door_local)}
+## `kind` picks the icon on the map (see WorldMap.KINDS).
+func _place(place_name: String, lot: Node3D, door_local: Vector3, kind := "") -> Dictionary:
+	var p := {"name": place_name, "door": lot.to_global(door_local), "curb": _curb(lot), "pos": lot.to_global(door_local),
+		"kind": kind}
 	places.append(p)
 	return p
 
@@ -464,7 +466,7 @@ func _park(bx: int, bz: int) -> void:
 	rl.rotation.y = PI
 	_toilet(rb, Vector3(-1.8, 0, -1.6))
 	_toilet(rb, Vector3(1.8, 0, -1.6))
-	places.append({"name": "Rodknee Square (public restroom)", "pos": r.global_position + Vector3(0, 0, -4.5), "door": r.global_position})
+	places.append({"name": "Rodknee Square (public restroom)", "pos": r.global_position + Vector3(0, 0, -4.5), "door": r.global_position, "kind": "restroom"})
 
 
 # --- Businesses -----------------------------------------------------------------------
@@ -536,7 +538,7 @@ func _restaurant(lot: Node3D, rname: String, color: Color) -> void:
 			return "",
 		func(): Gigs.pick_up_food())
 	_toilet(b, Vector3(size.x / 2.0 - 1.4, 0, -size.z / 2.0 + 1.0))
-	var p := _place(rname, lot, Vector3(0, 0, -2.0))
+	var p := _place(rname, lot, Vector3(0, 0, -2.0), "food")
 	restaurants.append({"name": rname, "door": p.door, "curb": p.curb})
 
 
@@ -599,7 +601,7 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 				Game.fridge_meals += GameData.HOME_GROCERIES_MEALS
 				Game.notify("Groceries bought. They're in your fridge at home.", "good"))
 	_toilet(b, Vector3(-size.x / 2.0 + 1.5, 0, -size.z / 2.0 + 1.0))
-	var p := _place(sname, lot, Vector3(0, 0, -2.0))
+	var p := _place(sname, lot, Vector3(0, 0, -2.0), "grocery")
 	stores.append({"name": sname, "door": p.door, "curb": p.curb, "items": items})
 
 
@@ -641,7 +643,7 @@ func _gas_station(lot: Node3D) -> void:
 		func(): return "Buy snacks & coffee",
 		func(): _food_menu("WahWah Market", GameData.GAS_STATION_MENU))
 	_toilet(b, Vector3(5.5, 0, -3.8))
-	_place("WahWah (gas & snacks)", lot, Vector3(0, 0, -2.0))
+	_place("WahWah (gas & snacks)", lot, Vector3(0, 0, -2.0), "gas")
 
 
 func _laundromat(lot: Node3D) -> void:
@@ -661,7 +663,7 @@ func _mechanic(lot: Node3D) -> void:
 		func(): _mechanic_menu())
 	_toilet(b, Vector3(6.8, 0, -7))
 	mechanic_bay = Transform3D(lot.global_transform.basis, b.to_global(Vector3(0, 1.0, -1)))
-	_place("Lube & Tube (mechanic)", lot, Vector3(0, 0, -3.0))
+	_place("Lube & Tube (mechanic)", lot, Vector3(0, 0, -3.0), "mechanic")
 
 
 func _mechanic_menu() -> void:
@@ -717,7 +719,7 @@ func _dealership(lot: Node3D, finance := false) -> void:
 	Kit.interactable(b, Vector3(0, 1, -0.8), 2.2,
 		func(): return "Talk to a DriveThyme finance manager" if finance else "Talk to Honest Al",
 		func(): _finance_menu() if finance else _dealer_menu())
-	_place(lot_name, lot, Vector3(0, 0, -21.0))
+	_place(lot_name, lot, Vector3(0, 0, -21.0), "cars")
 
 
 func _dealer_menu() -> void:
@@ -779,7 +781,7 @@ func _warehouse(lot: Node3D) -> void:
 			return "",
 		func(): main.phone.open_app("jungleflex"), true)
 	_toilet(b, Vector3(26, 0, -11.5))
-	var p := _place("Jungle Flex Station (DNC9)", lot, Vector3(0, 0, -3.0))
+	var p := _place("Jungle Flex Station (DNC9)", lot, Vector3(0, 0, -3.0), "flex")
 	station = {"name": p.name, "door": load_point, "curb": p.curb, "load_point": load_point}
 
 
@@ -826,7 +828,7 @@ func _home(lot: Node3D, id: String, bname: String, size: Vector3, color: Color, 
 	Kit.interactable(b, Vector3(-hw + 1.4, 1, hd - 3.0), 2.0,
 		func(): return "Your lease: %s ($%.0f a month)" % [h.short, h.rent] if Game.home_id == id else "Lease info: " + h.short,
 		func(): _lease_menu(id))
-	var p := _place(h.short + " (housing)", lot, Vector3(0, 0, -setback + 1.0))
+	var p := _place(h.short + " (housing)", lot, Vector3(0, 0, -setback + 1.0), "housing")
 	homes[id] = {"door": p.door, "curb": p.curb,
 		"inside": b.to_global(Vector3(0, 1, hd - 3.0)),
 		"parking": Transform3D(lot.global_transform.basis * Basis(Vector3.UP, PI / 2.0), _curb(lot) + Vector3(0, 0.8, 0))}

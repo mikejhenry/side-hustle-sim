@@ -19,6 +19,8 @@ var _pivot: Node3D
 var _spring: SpringArm3D
 var _model: Node3D
 var _carry_kind := ""
+var _jumped := false
+var _air_time := 0.0
 var _carry_nodes: Array = []    # one item, or one per hand for grocery bags
 var _phone_mesh: MeshInstance3D
 var _col: CollisionShape3D
@@ -195,6 +197,13 @@ func _physics_process(delta: float) -> void:
 		input_dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		if Input.is_action_just_pressed("jump") and is_on_floor():
 			velocity.y = JUMP_VELOCITY
+			_jumped = true
+	# Counts as in the air after a jump, or a real fall (not just stepping off a curb or stair).
+	if is_on_floor() and velocity.y <= 0.0:
+		_air_time = 0.0
+		_jumped = false
+	else:
+		_air_time += delta
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input_dir.x, 0, input_dir.y)
 	var speed := SPRINT_SPEED if Input.is_action_pressed("sprint") else WALK_SPEED
 	# Needs slow you down: starving, exhausted or bursting bladder.
@@ -214,7 +223,8 @@ func _physics_process(delta: float) -> void:
 		_walk_t = 0.0
 	if _human:
 		var hspeed := Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0
-		_human.animate(delta, hspeed, CarryItem.HOLD.get(_carry_kind, "") if _carry_kind != "" else "")
+		var airborne := _jumped or _air_time > 0.3
+		_human.animate(delta, hspeed, CarryItem.HOLD.get(_carry_kind, "") if _carry_kind != "" else "", airborne, velocity.y)
 	for i in _legs.size():
 		_legs[i].rotation.x = sin(_walk_t + i * PI) * 0.55
 		_arms[i].rotation.x = -sin(_walk_t + i * PI) * 0.45

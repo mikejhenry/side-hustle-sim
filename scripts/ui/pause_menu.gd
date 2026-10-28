@@ -1,6 +1,6 @@
 class_name PauseMenu
 extends CanvasLayer
-## Esc / Start pauses the game: resume, controls, save/load, graphics, tutorial, quit.
+## Esc / Start pauses the game: resume, map, controls, save/load, graphics, tutorial, quit.
 ## Runs while the tree is paused (process_mode ALWAYS).
 
 var main: Node = null
@@ -10,6 +10,10 @@ var _list: VBoxContainer
 var _menu: PanelContainer
 var _help: PanelContainer
 var _settings: PanelContainer
+var _map: PanelContainer
+var _map_view: WorldMap
+var _map_list: VBoxContainer
+var _map_only := false     # opened straight from the map key: Back closes the menu
 var _mirror_btn: Button
 const MIRROR_NAMES := ["in the car", "in the car + on screen", "off"]
 
@@ -33,6 +37,7 @@ func _ready() -> void:
 	_settings = _centered_panel(dim, 460)
 	_build_settings()
 	_settings.visible = false
+	_build_map(dim)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	panel.add_child(v)
@@ -65,12 +70,14 @@ func _centered_panel(parent: Control, width: float) -> PanelContainer:
 func _show_help(on: bool) -> void:
 	_help.visible = on
 	_settings.visible = false
+	_map.visible = false
 	_menu.visible = not on
 	if not on:
-		Game.pad_focus.call_deferred(_list, 1)
+		Game.pad_focus.call_deferred(_list, 2)
 
 
 func _show_settings(on: bool) -> void:
+	_map.visible = false
 	_settings.visible = on
 	_menu.visible = not on
 	if on:
@@ -78,7 +85,7 @@ func _show_settings(on: bool) -> void:
 		Game.pad_focus.call_deferred(_settings)
 	else:
 		Game.save_options()
-		Game.pad_focus.call_deferred(_list, 2)
+		Game.pad_focus.call_deferred(_list, 3)
 
 
 func _build_settings() -> void:
@@ -146,6 +153,7 @@ func _rebuild() -> void:
 		_list.remove_child(c)
 		c.queue_free()
 	_add("Resume", close)
+	_add("Map", func(): _show_map(true))
 	_add("Controls", func(): _show_help(true))
 	_add("Settings", func(): _show_settings(true))
 	_add("Save game", func(): Game.save_game())
@@ -155,7 +163,7 @@ func _rebuild() -> void:
 	_add("Graphics: %s" % ("Low" if main.low_graphics else "High"), func():
 		main.toggle_graphics()
 		_rebuild()
-		Game.pad_focus.call_deferred(_list, 5))
+		Game.pad_focus.call_deferred(_list, 6))
 	if main.tutorial and main.tutorial.active:
 		_add("Skip tutorial", func():
 			main.tutorial.finish(true)
@@ -176,7 +184,129 @@ func _add(text: String, cb: Callable) -> void:
 	_list.add_child(b)
 
 
+## Straight to the full map (G / D-pad right).
+func open_map() -> void:
+	open()
+	_map_only = true
+	_show_map(true)
+
+
+func _build_map(parent: Control) -> void:
+	_map = PanelContainer.new()
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.07, 0.08, 0.11, 0.97)
+	st.set_corner_radius_all(14)
+	st.set_content_margin_all(16)
+	_map.add_theme_stylebox_override("panel", st)
+	_map.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		_map.set_anchor_and_offset(side, 1.0 if side in [SIDE_RIGHT, SIDE_BOTTOM] else 0.0, -30.0 if side in [SIDE_RIGHT, SIDE_BOTTOM] else 30.0)
+	parent.add_child(_map)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	_map.add_child(row)
+	_map_view = WorldMap.new()
+	_map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_map_view.place_picked.connect(func(p): _pick(p))
+	row.add_child(_map_view)
+	var side_col := VBoxContainer.new()
+	side_col.custom_minimum_size.x = 320
+	side_col.add_theme_constant_override("separation", 8)
+	row.add_child(side_col)
+	var title := Label.new()
+	title.text = "MAP"
+	title.add_theme_font_size_override("font_size", 28)
+	side_col.add_child(title)
+	var hint := Label.new()
+	hint.text = "Click an icon, or pick a place below, to set your GPS. Esc / B to go back."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.82))
+	side_col.add_child(hint)
+	WorldMap.legend(side_col, 2, 13)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
+	side_col.add_child(scroll)
+	_map_list = VBoxContainer.new()
+	_map_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_list.add_theme_constant_override("separation", 4)
+	scroll.add_child(_map_list)
+	_map.visible = false
+
+
+func _show_map(on: bool) -> void:
+	_map.visible = on
+	_help.visible = false
+	_settings.visible = false
+	_menu.visible = not on
+	if on:
+		_map_view.main = main
+		_fill_map_list()
+		Game.pad_focus.call_deferred(_map_list)
+	else:
+		_map_only = false
+		Game.pad_focus.call_deferred(_list, 1)
+
+
+func _fill_map_list() -> void:
+	for c in _map_list.get_children():
+		_map_list.remove_child(c)
+		c.queue_free()
+	if not main.map_waypoint.is_empty():
+		_map_button("Clear GPS (%s)" % main.map_waypoint.label, Color(0.4, 0.2, 0.2), func():
+			main.map_waypoint = {}
+			main.refresh_gps()
+			_fill_map_list())
+	if not Gigs.job.is_empty():
+		var note := Label.new()
+		note.text = "Your current job's stop comes first on the GPS."
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note.add_theme_font_size_override("font_size", 12)
+		note.add_theme_color_override("font_color", Color(1, 0.85, 0.5))
+		_map_list.add_child(note)
+	var here: Vector3 = main.actor_position()
+	for kind in WorldMap.KINDS:
+		var group: Array = _map_view.places().filter(func(p): return p.get("kind", "") == kind)
+		if group.is_empty():
+			continue
+		group.sort_custom(func(a, b): return here.distance_to(a.pos) < here.distance_to(b.pos))
+		var k: Array = WorldMap.KINDS[kind]
+		var head := Label.new()
+		head.text = "%s  %s" % [k[1], k[0]]
+		head.add_theme_font_size_override("font_size", 15)
+		head.add_theme_color_override("font_color", k[2])
+		_map_list.add_child(head)
+		for p in group:
+			var place: Dictionary = p
+			var mi := here.distance_to(place.pos) / GameData.METERS_PER_MILE
+			_map_button("%s   %.1f mi" % [place.name, mi], Color(0.16, 0.17, 0.21), func(): _pick(place))
+
+
+func _map_button(text: String, color: Color, cb: Callable) -> void:
+	var b := Button.new()
+	b.text = text
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.clip_text = true
+	b.add_theme_font_size_override("font_size", 14)
+	var st := StyleBoxFlat.new()
+	st.bg_color = color
+	st.set_corner_radius_all(6)
+	st.set_content_margin_all(6)
+	b.add_theme_stylebox_override("normal", st)
+	b.pressed.connect(cb)
+	_map_list.add_child(b)
+
+
+func _pick(place: Dictionary) -> void:
+	main.set_waypoint(place.pos, place.name)
+	_fill_map_list()
+
+
 func open() -> void:
+	_map_only = false
 	is_open = true
 	visible = true
 	get_tree().paused = true
@@ -189,6 +319,7 @@ func close() -> void:
 	if _settings.visible:
 		Game.save_options()
 	_show_help(false)
+	_map_only = false
 	is_open = false
 	visible = false
 	get_tree().paused = false
@@ -198,8 +329,16 @@ func close() -> void:
 func _input(event: InputEvent) -> void:
 	if not is_open:
 		return
-	if event.is_action_pressed("pause") or event.is_action_pressed("back"):
-		if _help.visible:
+	if event.is_action_pressed("map") and _map.visible:
+		close()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("pause") or event.is_action_pressed("back"):
+		if _map.visible:
+			if _map_only:
+				close()
+			else:
+				_show_map(false)
+		elif _help.visible:
 			_show_help(false)
 		elif _settings.visible:
 			_show_settings(false)

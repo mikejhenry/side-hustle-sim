@@ -8,6 +8,8 @@ extends Node3D
 ##   heel to toe, hips that bob, sway and twist with a counter-rotating chest, a steady head,
 ##   arms that swing with relaxed elbows and hands, and curled fingers;
 ##   an idle with breathing and a slow weight shift;
+##   a split-leg jump (lead leg up in front, trail leg stretched behind, arms opposite) that
+##   tucks for the landing as you fall, then a knee-bending landing;
 ##   smooth blending between all of them.
 ## Faces +Z, feet at y = 0.
 
@@ -25,6 +27,11 @@ var _move := 0.0            # smoothed 0 (standing) .. 1 (walking) .. 1.8 (runni
 var _idle_t := 0.0
 var _carry := 0.0           # smoothed 0..1, both arms forward holding a box
 var _hang := {"L": 0.0, "R": 0.0}   # smoothed 0..1, that hand holds a bag hanging at your side
+var _air := 0.0             # smoothed 0..1, in a jump
+var _rise := 0.0            # 1 going up, 0 coming down (legs come together to land)
+var _lead := 1.0            # +1: left leg leads the jump, -1: right
+var _land := 0.0            # 1 right after landing, fades out: knees soak it up
+var _was_air := false
 
 const BODY_BONES := ["Hips", "Abdomen", "Torso", "Chest", "Neck", "Head", "Shoulder.L", "Shoulder.R",
 	"UpperArm.L", "UpperArm.R", "LowerArm.L", "LowerArm.R", "Hand.L", "Hand.R",
@@ -124,9 +131,21 @@ func _curl_fingers(grip := 0.0) -> void:
 ## Call every frame with your horizontal speed in m/s. `carry`: "" (hands free), "front"
 ## (a box held in front with both hands), "hang_r" (a bag in the right hand) or "hang_both"
 ## (a bag in each hand).
-func animate(delta: float, speed: float, carry := "") -> void:
+## `airborne` is true during a jump or a fall, `vy` the vertical speed (m/s).
+func animate(delta: float, speed: float, carry := "", airborne := false, vy := 0.0) -> void:
 	if skeleton == null:
 		return
+	if airborne and not _was_air:
+		# Take off from whichever leg is behind: the front one leads.
+		_lead = 1.0 if sin(_phase) >= 0.0 else -1.0
+		if speed < 0.5:
+			_lead = -_lead if randf() < 0.5 else _lead
+	if _was_air and not airborne:
+		_land = clampf(0.4 + _air * 0.6, 0.0, 1.0)
+	_was_air = airborne
+	_air = move_toward(_air, 1.0 if airborne else 0.0, delta * (9.0 if airborne else 12.0))
+	_rise = move_toward(_rise, clampf(0.5 + vy / 4.0, 0.0, 1.0), delta * 6.0)
+	_land = move_toward(_land, 0.0, delta * 2.5)
 	var target := clampf(speed / WALK_SPEED, 0.0, 1.8)
 	# Blend quickly into motion and a little slower back to standing.
 	_move = move_toward(_move, target, delta * (4.0 if target > _move else 3.0))
@@ -184,12 +203,19 @@ func _apply(phase: float, m: float, carry: float, t: float) -> void:
 	# Body bob: lowest when both feet are down (twice per cycle), higher when running.
 	var bob := -absf(cos(phase)) * 0.035 * walk - run * 0.03 + absf(sin(phase)) * 0.02 * run
 	var sway := sin(phase) * 0.025 * walk + shift * 0.5
-	position = Vector3(sway, bob, 0)
+	var air := _air
+	bob *= 1.0 - air
+	# Landing: the body drops as the knees bend, then comes back up.
+	var land := _land * _land * (3.0 - 2.0 * _land)
+	bob -= land * 0.13
+	position = Vector3(sway * (1.0 - air), bob, 0)
+	# Jump split: wide while rising, legs closing up and front knee lifting to land.
+	var spread := lerpf(0.6, 1.0, _rise) * air
 
 	# Hips twist with the legs and tip toward the standing leg; chest counter-rotates.
 	var hips := _rot(Vector3.UP, -sin(phase) * 0.14 * walk) * _rot(Vector3.BACK, -cos(phase * 2.0) * 0.025 * walk + shift)
 	_set_bone("Hips", hips)
-	var lean := 0.04 * walk + 0.16 * run
+	var lean := (0.04 * walk + 0.16 * run) * (1.0 - air) + 0.1 * air + 0.22 * land
 	var spine := _rot(Vector3.RIGHT, lean * 0.5 - breathe) * _rot(Vector3.UP, sin(phase) * 0.03 * walk)
 	_set_bone("Abdomen", spine, hips)
 	var chest := _rot(Vector3.RIGHT, lean - breathe * 0.5) * _rot(Vector3.UP, sin(phase) * 0.12 * walk) \
@@ -206,18 +232,26 @@ func _apply(phase: float, m: float, carry: float, t: float) -> void:
 		var v := cos(phase) * s               # >0: this leg swinging forward
 		# Thigh: forward/back swing; a little higher on the swing when running.
 		var thigh := -c * amp - maxf(v, 0.0) * 0.25 * run
+		# In a jump: lead leg up in front, trail leg stretched out behind.
+		var leads := s == _lead
+		var air_thigh := -1.45 * spread if leads else 0.85 * spread
+		thigh = lerpf(thigh, air_thigh, air)
+		thigh -= land * (0.55 if leads else 0.3)
 		var thigh_b := hips * _rot(Vector3.RIGHT, thigh) * _rot(Vector3.BACK, s * 0.02 * still)
 		_set_bone("UpperLeg." + side, thigh_b, hips)
 		# Knee: big bend while the foot swings through, small bend absorbing the landing.
 		var swing := pow(maxf(v, 0.0), 1.3)
-		var land := maxf(c, 0.0) * maxf(-v, 0.0)
-		var knee := (swing * (0.95 + 0.7 * run) + land * 0.25 + 0.04) * walk + 0.03 * still
+		var plant := maxf(c, 0.0) * maxf(-v, 0.0)
+		var knee := (swing * (0.95 + 0.7 * run) + plant * 0.25 + 0.04) * walk + 0.03 * still
+		var air_knee := (1.0 + 0.3 * (1.0 - _rise)) if leads else (0.2 + 0.7 * (1.0 - _rise))
+		knee = lerpf(knee, air_knee, air) + land * (0.9 if leads else 0.6)
 		var shin_b := thigh_b * _rot(Vector3.RIGHT, knee)
 		_set_bone("LowerLeg." + side, shin_b, thigh_b)
 		# Foot: heel strike in front, push off the toes behind, level in between.
 		var foot_angle := -thigh - knee                 # cancel the leg: flat on the ground
 		foot_angle += -maxf(c, 0.0) * 0.18 * walk       # toes up at heel strike
 		foot_angle += maxf(-c, 0.0) * maxf(v, 0.0) * 0.6 * walk   # toe-off
+		foot_angle = lerpf(foot_angle, -thigh - knee + (0.15 if leads else 0.5), air)  # toes point in the air
 		var foot_b := hips * _rot(Vector3.RIGHT, (thigh + knee) + foot_angle)
 		_set_bone("Foot." + side, foot_b, shin_b)
 
@@ -225,10 +259,13 @@ func _apply(phase: float, m: float, carry: float, t: float) -> void:
 		var out: float = _arm_side.get(side, s)
 		var hang: float = _hang[side]
 		# Holding a bag: the arm hangs a little away from the leg so the bag clears it.
-		var down := _rot(Vector3.BACK, -(1.36 - 0.05 * walk - 0.1 * hang) * out)
+		var down := _rot(Vector3.BACK, -(1.36 - 0.05 * walk - 0.1 * hang - 0.3 * air * (1.0 - hang)) * out)
 		# Negative is forward. The arm swings opposite to the leg on its side; running swings
 		# further, mostly backward (elbow behind the body), with the forearm crossing in a bit.
 		var arm_swing := (c * (0.3 * walk + 0.3 * run) + 0.12 * run) * (1.0 - 0.75 * hang)
+		# In a jump the arms go opposite the legs: the arm on the lead-leg side swings back,
+		# the other reaches forward and up for balance.
+		arm_swing = lerpf(arm_swing, (0.55 if leads else -1.1) * spread * (1.0 - 0.75 * hang), air)
 		var fwd := lerpf(arm_swing + breathe * 0.5, -0.25, carry)
 		var arm_b := _rot(Vector3.RIGHT, fwd) * _rot(Vector3.UP, -out * (0.3 * carry + RUN_CROSS * run * (1.0 - hang))) * down
 		_set_bone("UpperArm." + side, chest * arm_b, chest)
@@ -236,6 +273,7 @@ func _apply(phase: float, m: float, carry: float, t: float) -> void:
 		# the arm comes forward. Smooth all the way round (no kinks in the cycle).
 		var ahead := 0.5 - 0.5 * c
 		var elbow := -(0.18 + 0.22 * ahead * walk + (1.3 + 0.35 * ahead) * run)
+		elbow = lerpf(elbow, -0.45, air)
 		elbow = lerpf(lerpf(elbow, -0.1, hang), -1.2, carry)
 		# Carrying in front: forearms angle in so the palms meet the box's sides.
 		var fore_b := chest * _rot(Vector3.UP, -out * CARRY_IN * carry) * _rot(Vector3.RIGHT, fwd + elbow) * down

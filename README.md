@@ -36,10 +36,11 @@ No assets to download: the town is built in code at startup, and the surface tex
 | | B | Back (phone home screen, close menus) |
 | C | LB | Driving camera: first person / chase |
 | M | D-pad up | Mirrors: in the car / in the car + on screen / off |
+| G | D-pad right | Full map (also in the pause menu) |
 | L | RB | Headlights |
 | R | D-pad down | Flip the car upright |
 | H | R3 | Horn |
-| Esc | Start | Pause menu (resume, controls, save/load, graphics, tutorial, quit) |
+| Esc | Start | Pause menu (resume, map, controls, save/load, graphics, tutorial, quit) |
 | F1 | Back | Controls |
 | F3 | | Graphics quality: high / low (low is the default on Intel graphics) |
 | F5 / F9 | | Save / load |
@@ -84,6 +85,15 @@ higher pay.
 
 **Turn-by-turn GPS.** Any job or Maps waypoint gets a blue route on the minimap and a
 next-turn banner at the top of the screen ("Turn left onto Market St, 0.3 mi").
+
+**Map.** Press G (D-pad right on a gamepad), pick Map in the pause menu, or open the
+Maps app on your phone. It shows every street, the beltway and Churchmans Loop, an
+icon for each place (restaurants, grocery stores, gas, mechanic, car lots, the Jungle
+Flex station, housing, restrooms, your home), where you are, and your GPS route. Click
+an icon or pick a place from the list to set the GPS there.
+
+**Jumping.** A running split-leg leap: the front leg comes up, the back leg stretches
+out, the arms swing opposite, and the knees bend to soak up the landing.
 
 **Mirrors.** In first person, the rearview and side mirrors on the car show live
 reflections. Each is a small extra camera view, refreshed in turn to keep it cheap. M (or
