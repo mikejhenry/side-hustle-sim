@@ -6,10 +6,12 @@ extends RefCounted
 # --- Time -------------------------------------------------------------------
 const REAL_SECONDS_PER_GAME_MINUTE := 2.0   # 1 game day = 48 real minutes
 const START_HOUR := 7
-const BILL_CYCLE_DAYS := 3                  # rent, phone and insurance are due every 3 days
+const BILL_CYCLE_DAYS := 30                 # rent, phone, insurance (and car loans) are due monthly
 const BILL_HOUR := 9                        # bills auto-pay at 9:00 AM on the due day
-const LATE_FEE := 25.0
-const EVICTION_GRACE_DAYS := 2              # rent this many days overdue = evicted
+const LATE_FEE := 50.0
+const EVICTION_GRACE_DAYS := 5              # rent this many days overdue = evicted
+const REPO_GRACE_DAYS := 5                  # car loan this many days overdue = repossessed
+const TICKET_DUE_DAYS := 7                  # unpaid tickets become a bill due in a week
 const DAY_NAMES := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # --- Money & world scale ------------------------------------------------------
@@ -41,36 +43,36 @@ const TOW_PRICE := 85.0
 
 # --- Cars --------------------------------------------------------------------
 # engine: force per driven wheel. top_speed: m/s. tank: gallons.
-# comfort scales rideshare pay and ratings. insurance: per bill cycle.
+# comfort scales rideshare pay and ratings. insurance: per month.
 const CARS := {
 	"rustwagon": {
 		"name": "1999 Rustwagon Sedan", "year": 1999, "price": 0, "trade_in": 250,
 		"engine": 2550.0, "top_speed": 27.0, "mpg": 20.0, "tank": 12.0,
-		"comfort": 0.7, "insurance": 22.0, "tires": 180.0,
+		"comfort": 0.7, "insurance": 150.0, "tires": 180.0,
 		"color": Color(0.52, 0.36, 0.26), "size": Vector3(1.8, 0.75, 4.3), "odometer": 187412.0,
 	},
 	"civil": {
 		"name": "2013 Hondo Civil", "year": 2013, "price": 1400, "trade_in": 700,
 		"engine": 3050.0, "top_speed": 33.0, "mpg": 31.0, "tank": 13.0,
-		"comfort": 1.0, "insurance": 28.0, "tires": 220.0,
+		"comfort": 1.0, "insurance": 190.0, "tires": 220.0,
 		"color": Color(0.75, 0.77, 0.8), "size": Vector3(1.8, 0.72, 4.4), "odometer": 121300.0,
 	},
 	"pious": {
 		"name": "2018 Toyoyo Pious Hybrid", "year": 2018, "price": 4200, "trade_in": 2000,
 		"engine": 3250.0, "top_speed": 34.0, "mpg": 52.0, "tank": 11.0,
-		"comfort": 1.1, "insurance": 32.0, "tires": 260.0,
+		"comfort": 1.1, "insurance": 220.0, "tires": 260.0,
 		"color": Color(0.2, 0.45, 0.8), "size": Vector3(1.8, 0.75, 4.5), "odometer": 78400.0,
 	},
 	"passit": {
 		"name": "2021 Folkswagon Passit", "year": 2021, "price": 9500, "trade_in": 4800,
 		"engine": 4100.0, "top_speed": 40.0, "mpg": 34.0, "tank": 15.0,
-		"comfort": 1.3, "insurance": 40.0, "tires": 340.0,
+		"comfort": 1.3, "insurance": 270.0, "tires": 340.0,
 		"color": Color(0.1, 0.1, 0.12), "size": Vector3(1.9, 0.78, 4.8), "odometer": 31000.0,
 	},
 	"voltz": {
 		"name": "2025 Voltz Model Tree EV", "year": 2025, "price": 21000, "trade_in": 12000,
 		"engine": 5400.0, "top_speed": 48.0, "mpg": 120.0, "tank": 10.0,
-		"comfort": 1.6, "insurance": 55.0, "tires": 480.0,
+		"comfort": 1.6, "insurance": 360.0, "tires": 480.0,
 		"color": Color(0.85, 0.12, 0.12), "size": Vector3(1.9, 0.7, 4.7), "odometer": 900.0,
 	},
 }
@@ -79,18 +81,26 @@ const CAR_ORDER := ["rustwagon", "civil", "pious", "passit", "voltz"]
 # --- Housing ------------------------------------------------------------------
 const HOMES := {
 	"room": {"name": "Rented room at Dottie's Boarding House", "short": "Dottie's room",
-		"rent": 95.0, "deposit": 0.0, "sleep_quality": 0.8},
+		"rent": 950.0, "deposit": 0.0, "sleep_quality": 0.8},
 	"studio": {"name": "Studio at Maple Court Apartments", "short": "Maple Court studio",
-		"rent": 160.0, "deposit": 450.0, "sleep_quality": 1.0},
+		"rent": 1500.0, "deposit": 450.0, "sleep_quality": 1.0},
 	"twobr": {"name": "2-bed apartment at Lakeview Towers", "short": "Lakeview 2BR",
-		"rent": 260.0, "deposit": 1200.0, "sleep_quality": 1.15},
+		"rent": 2400.0, "deposit": 1200.0, "sleep_quality": 1.15},
 	"house": {"name": "3-bed house in Brandywine Hills", "short": "Brandywine house",
-		"rent": 420.0, "deposit": 7500.0, "sleep_quality": 1.3},
+		"rent": 3900.0, "deposit": 7500.0, "sleep_quality": 1.3},
 }
 const HOME_ORDER := ["room", "studio", "twobr", "house"]
-const PHONE_BILL := 15.0
+const PHONE_BILL := 85.0
 const PHONE_PRO_NAME := "Pear uPhone 16 Pro"
 const PHONE_PRO_PRICE := 350.0
+
+# Financing (DriveThyme Auto Finance). Same cars as Honest Al's, marked up, with a down
+# payment and a 12-month loan at a high rate: easier to get into, costs more in the end.
+const FINANCE_NAME := "DriveThyme Auto Finance"
+const FINANCE_MARKUP := 1.15
+const FINANCE_DOWN := 0.15
+const FINANCE_APR := 0.239
+const FINANCE_MONTHS := 12
 
 # Traffic law
 const SPEED_LIMIT := 30.0       # mph in town
@@ -100,6 +110,7 @@ const TICKET_BASE := 75.0
 const TICKET_PER_MPH := 10.0
 const EVADING_FINE := 150.0
 const RECKLESS_FINE := 180.0
+const RED_LIGHT_FINE := 150.0
 const HOME_GROCERIES_PRICE := 32.0
 const HOME_GROCERIES_MEALS := 6
 

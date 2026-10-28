@@ -38,19 +38,19 @@ use phone -> deliver -> get paid -> eat / pee / gas / oil as needed -> sleep -> 
 | Phone battery | Drains faster when online | Charges in the car / while sleeping at home | Apps go offline |
 
 ### Money and bills
-- Bills every 3 days (`BILL_CYCLE_DAYS`): rent, phone ($15), car insurance (by car).
+- Monthly bills (`BILL_CYCLE_DAYS` = 30): rent, phone ($85), car insurance (by car), car loan.
 - Auto-pay at 9 AM on the due day. Can't pay -> $25 late fee.
 - Rent 2+ days overdue -> evicted (sleep in car until you sign a new lease).
 - Phone bill 1+ day overdue -> service suspended, gig apps won't work.
 - Bank app shows bills, lets you pay early, and lists transactions.
 
 ### Housing
-| Home | Rent / 3 days | Move-in | Sleep quality |
+| Home | Rent / month | Move-in | Sleep quality |
 | --- | --- | --- | --- |
-| Dottie's Boarding House room | $95 | start | 80% |
-| Maple Court studio | $160 | $450 + rent | 100% |
-| Lakeview Towers 2BR | $260 | $1,200 + rent | 115% |
-| Brandywine Hills house | $420 | $7,500 + rent | 130% |
+| Dottie's Boarding House room | $950 | start | 80% |
+| Maple Court studio | $1,500 | $450 + rent | 100% |
+| Lakeview Towers 2BR | $2,400 | $1,200 + rent | 115% |
+| Brandywine Hills house | $3,900 | $7,500 + rent | 130% |
 
 ### Cars
 | Car | Price | MPG | Notes |

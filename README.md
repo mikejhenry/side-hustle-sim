@@ -35,7 +35,7 @@ No assets to download: the town is built in code at startup, and the surface tex
 | Tab or P | Y | Phone |
 | | B | Back (phone home screen, close menus) |
 | C | LB | Driving camera: first person / chase |
-| M | D-pad up | Mirrors on / off |
+| M | D-pad up | Mirrors: in the car / in the car + on screen / off |
 | L | RB | Headlights |
 | R | D-pad down | Flip the car upright |
 | H | R3 | Horn |
@@ -45,7 +45,10 @@ No assets to download: the town is built in code at startup, and the surface tex
 | F5 / F9 | | Save / load |
 | F7 / F8 | | Dev cheats: 10x time speed / +$500 |
 
-With a gamepad, the phone and menus highlight a button: move with the D-pad and press A.
+With a gamepad, the phone and menus highlight a button: move with the D-pad or left stick,
+press A to pick, B to go back. On-screen prompts and the tutorial name whichever you used last
+(E or X, Tab or Y, and so on). In first person, the right stick turns your head: push further
+to look further (up to about 80 degrees), and it eases back to the road when you let go.
 
 **Tutorial.** The first time you play, a guided tour walks you through the controls, the phone,
 your needs, and then drives you (with the GPS) to Lube & Tube, WahWah, a restaurant, the grocery
@@ -58,9 +61,9 @@ gig. Skip or restart it from the pause menu.
 | --- | --- | --- |
 | **Yoober** | Uber | Drive to the pickup, tap *Start Trip* on the phone, drive to the drop-off, tap *Complete Trip*. Crashes cost stars. Needs a 2011 or newer car. |
 | **Drift** | Lyft | Same as Yoober with different peak times and pay. |
-| **DoorDish** | DoorDash | Walk into the restaurant, pick up at the *Mobile Pickup* counter, walk the order to the customer's door, take the drop-off photo in the app. |
+| **DoorDish** | DoorDash | Walk into the restaurant, pick up at the *Mobile Pickup* counter, walk the order to the customer's door, take the drop-off photo in the app (you have to be at the door). |
 | **Instacrate** | Instacart | Walk the aisles grabbing items on the in-app shopping list, check out at the Instacrate register, deliver, photo. |
-| **Jungle Flex** | Amazon Flex | Reserve a block (6 AM, 10 AM, 2 PM, 6 PM), drive into the DNC9 station, scan packages in the app, deliver to a cluster of houses before the block ends. |
+| **Jungle Flex** | Amazon Flex | Reserve a block (6 AM, 10 AM, 2 PM, 6 PM), drive into the DNC9 station, scan packages in the app, deliver to a cluster of houses (a photo at each door) before the block ends. |
 
 Each app has its own peak hours (shown as a bar chart in the app). Peak hours mean more offers and
 higher pay.
@@ -70,28 +73,38 @@ higher pay.
 - **Hunger, bladder, energy.** Eat at restaurants, WahWah, or from your fridge. Use restrooms
   (restaurants, stores, the gas station, the park, or home). Sleep in your bed or, badly, in your car.
   Letting them run out has consequences (accidents, passing out, drowsy driving).
-- **Bills every 3 days**: rent, phone, car insurance. Auto-pay at 9 AM. Miss rent and you get
+- **Monthly bills**: rent, phone, car insurance (and a car loan if you financed). Auto-pay at 9 AM. Miss rent and you get
   evicted; miss the phone bill and your gig apps stop working.
 - **Car upkeep**: gas (WahWah), oil changes, tires, and engine repairs (Lube & Tube). Bald tires
   mean less grip, no oil means engine damage.
-- **Upgrades**: better cars at Honest Al's Used Cars, better homes at the leasing desks of Maple
+- **Upgrades**: better cars at Honest Al's Used Cars (cash), or at DriveThyme Auto Finance next
+  door (15% down, then 12 monthly payments at 23.9% APR on a marked-up price, so it costs more in
+  the end; miss a payment and they repossess it). Better homes at the leasing desks of Maple
   Court, Lakeview Towers, and the Brandywine Hills house.
 
 **Turn-by-turn GPS.** Any job or Maps waypoint gets a blue route on the minimap and a
 next-turn banner at the top of the screen ("Turn left onto Market St, 0.3 mi").
 
-**Mirrors.** In first person, your car has a working rearview mirror (top center) and side
-mirrors (left and right). Each is a small extra camera view, refreshed in turn to keep it cheap.
+**Mirrors.** In first person, the rearview and side mirrors on the car show live
+reflections. Each is a small extra camera view, refreshed in turn to keep it cheap. M (or
+Settings) switches between mirrors in the car, in the car plus large copies on screen, and off.
 
 **Police.** Three cop cars patrol with traffic. The speed limit is 30 mph in town and 45 on the
 beltway (shown next to your speed). A cop only notices you inside its field of view (ahead and
 to the sides, not behind) with a clear line of sight. Speeding more than 7 over, or crashing,
 in front of one starts a chase: lights flash and it follows you through the streets. Pull over
 and stop to get a ticket ($75 + $10 per mph over, more if you ran). If you can't pay, it becomes
-a bill. Get far enough away for long enough and you escape.
+a bill. Get far enough away for long enough and you escape. Running a red light in front of
+a cop gets you pulled over too ($150).
+
+**Traffic lights and cameras.** Six downtown intersections have traffic lights, and AI cars
+stop for them. Three of those have red light cameras ($100), and five streets (one on the
+beltway) have speed cameras ($80 + $6 per mph, past 10 over). Cameras flash and mail you a
+ticket as a bill due in a week.
 
 **Phone upgrade.** The Me app sells the Pear uPhone 16 Pro ($350). It shows nearby police on
-your minimap (blue COP badges, flashing red when they're after you), and its battery lasts longer.
+your minimap (blue COP badges, flashing red when they're after you) and the speed and red light
+cameras (orange badges), warns you ("Wayz: speed camera ahead"), and its battery lasts longer.
 
 **Sound.** Engine (revs through the gears), horn, police siren, crash, phone pings and a
 quiet town ambience, all synthesized in code at startup (`scripts/audio/sfx.gd`), so there are
@@ -100,7 +113,7 @@ no audio files.
 **Pedestrians** walk the sidewalks around the blocks, stopping now and then and when you're in
 their way.
 
-**Settings** (pause menu): volume, mouse sensitivity, gamepad look speed. Saved between runs.
+**Settings** (pause menu): volume, mouse sensitivity, gamepad look speed, mirrors. Saved between runs.
 
 All balance numbers (prices, pay, wear rates, need rates) live in `scripts/data/game_data.gd`.
 

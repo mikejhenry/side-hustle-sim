@@ -277,6 +277,10 @@ func _block(bx: int, bz: int) -> void:
 			_house_row(bx, bz, 0, [0, 1, 2])
 			_mechanic(_lot(bx, bz, 1, 0))
 			_dealership(_lot(bx, bz, 1, 1, 2))
+		Vector2i(0, 3):
+			_house_row(bx, bz, 0, [0, 1, 2])
+			_dealership(_lot(bx, bz, 1, 0, 2), true)
+			_house_row(bx, bz, 1, [2])
 		Vector2i(4, 3):
 			_house_row(bx, bz, 0, [0, 1, 2])
 			_warehouse(_lot(bx, bz, 1, 0, 3))
@@ -673,8 +677,10 @@ func _mechanic_menu() -> void:
 	main.hud.show_menu("Lube & Tube: \"What're we doin' today?\"", opts)
 
 
-func _dealership(lot: Node3D) -> void:
-	var b := _shop(lot, "Honest Al's Used Cars", Vector3(12, 4, 9), Color(0.85, 0.85, 0.9), 22.0)
+## Used car lots. Honest Al's sells for cash; DriveThyme finances (marked up, with interest).
+func _dealership(lot: Node3D, finance := false) -> void:
+	var lot_name := GameData.FINANCE_NAME if finance else "Honest Al's Used Cars"
+	var b := _shop(lot, lot_name, Vector3(12, 4, 9), Color(0.95, 0.88, 0.6) if finance else Color(0.85, 0.85, 0.9), 22.0)
 	Kit.box(lot, Vector3(40, 0.05, 18), Vector3(0, 0.04, -10), Color(0.3, 0.3, 0.32), false)
 	var i := 0
 	for id in GameData.CAR_ORDER:
@@ -685,7 +691,7 @@ func _dealership(lot: Node3D) -> void:
 		i += 1
 		var car_node := Node3D.new()
 		car_node.position = pos
-		car_node.rotation.y = 0.5
+		car_node.rotation.y = -0.5 if finance else 0.5
 		lot.add_child(car_node)
 		car_node.add_child(CarModel.build(c, false, true))
 		var cs := CollisionShape3D.new()
@@ -696,13 +702,20 @@ func _dealership(lot: Node3D) -> void:
 		var sb := StaticBody3D.new()
 		sb.add_child(cs)
 		car_node.add_child(sb)
-		Kit.label(lot, "%s\n$%s" % [c.name, c.price], pos + Vector3(0, 2.8, 0), 40, Color(1, 1, 0.7), true)
-	Kit.label(lot, "WE FINANCE NOBODY!", Vector3(0, 3.5, -20), 72, Color(1, 0.3, 0.3), true)
+		var tag := "%s\n$%s" % [c.name, c.price]
+		if finance:
+			var t := Game.finance_terms(id)
+			tag = "%s\n$%d down, $%d/mo" % [c.name, t.down, ceili(t.payment)]
+		Kit.label(lot, tag, pos + Vector3(0, 2.8, 0), 40, Color(1, 1, 0.7), true)
+	if finance:
+		Kit.label(lot, "BAD CREDIT? NO CREDIT? NO PROBLEM!", Vector3(0, 3.5, -20), 64, Color(0.3, 1, 0.4), true)
+	else:
+		Kit.label(lot, "WE FINANCE NOBODY!", Vector3(0, 3.5, -20), 72, Color(1, 0.3, 0.3), true)
 	_counter(b, Vector3(0, 0, -2.0), 4.0)
 	Kit.interactable(b, Vector3(0, 1, -0.8), 2.2,
-		func(): return "Talk to Honest Al",
-		func(): _dealer_menu())
-	_place("Honest Al's Used Cars", lot, Vector3(0, 0, -21.0))
+		func(): return "Talk to a DriveThyme finance manager" if finance else "Talk to Honest Al",
+		func(): _finance_menu() if finance else _dealer_menu())
+	_place(lot_name, lot, Vector3(0, 0, -21.0))
 
 
 func _dealer_menu() -> void:
@@ -716,8 +729,33 @@ func _dealer_menu() -> void:
 			continue
 		var cost: float = maxf(0.0, c.price - trade)
 		opts.append({"text": "%s  $%d  (you pay $%d after trade-in)" % [c.name, c.price, cost],
-			"cb": func(): Game.buy_car(id), "disabled": Game.money < cost})
-	main.hud.show_menu("Honest Al: \"Your %s? I'll give you $%d for it.\"" % [Game.car().name, trade], opts)
+			"cb": func(): Game.buy_car(id), "disabled": Game.money < cost or not Game.loan.is_empty()})
+	var title := "Honest Al: \"Your %s? I'll give you $%d for it.\"" % [Game.car().name, trade]
+	if not Game.loan.is_empty():
+		title += "\n\"You still owe %s on that. Pay it off first, pal.\"" % Game.loan.lender
+	main.hud.show_menu(title, opts)
+
+
+func _finance_menu() -> void:
+	var opts := []
+	if not Game.loan.is_empty():
+		var payoff := Game.loan_payoff()
+		opts.append({"text": "Pay off your loan: $%.2f" % payoff, "cb": func(): Game.pay_off_loan(), "disabled": Game.money < payoff})
+	for id in GameData.CAR_ORDER:
+		if id == Game.car_id:
+			continue
+		var c: Dictionary = GameData.CARS[id]
+		if c.price == 0:
+			continue
+		var t := Game.finance_terms(id)
+		opts.append({"text": "%s: $%d due today, then $%.2f/mo x %d  (total $%d vs $%d cash at Honest Al's)" % [
+			c.name, t.due_now, t.payment, GameData.FINANCE_MONTHS, t.total, c.price],
+			"cb": func(): Game.finance_car(id), "disabled": Game.money < t.due_now or not Game.loan.is_empty()})
+	var title := "DriveThyme: \"Everybody drives! %d%% down, %.1f%% APR, %d months. We'll take your %s as $%d toward it.\"" % [
+		int(GameData.FINANCE_DOWN * 100), GameData.FINANCE_APR * 100.0, GameData.FINANCE_MONTHS, Game.car().name, Game.trade_in_value()]
+	if not Game.loan.is_empty():
+		title = "DriveThyme: \"You've got %d payments of $%.2f left. Miss one and we come get it.\"" % [int(Game.loan.left), float(Game.loan.payment)]
+	main.hud.show_menu(title, opts)
 
 
 func _warehouse(lot: Node3D) -> void:
@@ -784,7 +822,7 @@ func _home(lot: Node3D, id: String, bname: String, size: Vector3, color: Color, 
 	Kit.box(b, Vector3(1.4, 1.0, 0.7), Vector3(-hw + 1.4, 0.5, hd - 2.0), Color(0.5, 0.4, 0.3))
 	Kit.label(b, "LEASING", Vector3(-hw + 1.4, 1.6, hd - 2.0), 36, Color(1, 1, 0.7), true)
 	Kit.interactable(b, Vector3(-hw + 1.4, 1, hd - 3.0), 2.0,
-		func(): return "Your lease: %s ($%.0f per %d days)" % [h.short, h.rent, GameData.BILL_CYCLE_DAYS] if Game.home_id == id else "Lease info: " + h.short,
+		func(): return "Your lease: %s ($%.0f a month)" % [h.short, h.rent] if Game.home_id == id else "Lease info: " + h.short,
 		func(): _lease_menu(id))
 	var p := _place(h.short + " (housing)", lot, Vector3(0, 0, -setback + 1.0))
 	homes[id] = {"door": p.door, "curb": p.curb,
@@ -796,9 +834,9 @@ func _lease_menu(id: String) -> void:
 	var h: Dictionary = GameData.HOMES[id]
 	var opts := []
 	if Game.home_id == id:
-		opts.append({"text": "You live here. Rent is $%.0f every %d days." % [h.rent, GameData.BILL_CYCLE_DAYS], "cb": func(): pass, "disabled": true})
+		opts.append({"text": "You live here. Rent is $%.0f a month." % h.rent, "cb": func(): pass, "disabled": true})
 	else:
 		var move_in: float = h.deposit + h.rent
 		opts.append({"text": "Sign lease: $%.0f deposit + $%.0f first rent" % [h.deposit, h.rent],
 			"cb": func(): Game.sign_lease(id), "disabled": Game.money < move_in})
-	main.hud.show_menu("%s\nRent $%.0f / %d days  |  Sleep quality %d%%" % [h.name, h.rent, GameData.BILL_CYCLE_DAYS, h.sleep_quality * 100], opts)
+	main.hud.show_menu("%s\nRent $%.0f / month  |  Sleep quality %d%%" % [h.name, h.rent, h.sleep_quality * 100], opts)

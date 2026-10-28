@@ -34,6 +34,7 @@ var _mm_marker: MeshInstance3D
 var _limit: Label
 var _police: PanelContainer
 var _police_label: Label
+var _flash: ColorRect
 var _mirrors := {}          # "rear" / "left" / "right" -> PanelContainer holding a TextureRect
 var _mirrors_shown := false
 
@@ -230,6 +231,13 @@ func _ready() -> void:
 	_police_label = _label(_police, "POLICE: pull over and stop", 22)
 	_police_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
+	# Camera flash
+	_flash = ColorRect.new()
+	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flash.color = Color(1, 1, 1, 0)
+	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_flash)
+
 	# Mirrors (first-person driving): rearview top center, side mirrors left and right.
 	for key in ["rear", "left", "right"]:
 		var frame := PanelContainer.new()
@@ -311,8 +319,8 @@ WASD or arrows / left stick: walk or drive      Mouse / right stick: look
 Gamepad driving: RT gas, LT brake and reverse, left stick steers
 Shift / L3: sprint        Space / A: jump or handbrake
 E / X: interact, get in or out of the car
-Tab or P / Y: phone (gig apps, bank, garage, maps)     B: back
-C / LB: driving camera (first person / chase)     M / D-pad up: mirrors
+Tab or P / Y: phone (gig apps, bank, garage, maps)     A: pick   B: back
+C / LB: driving camera (first person / chase)     M / D-pad up: mirror mode
 L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
 Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
 F5: save        F9: load
@@ -321,13 +329,17 @@ THE LAW
 Speed limit is 30 mph in town and 45 on the beltway. Police only notice
 you if you're in front of them or off to the side with nothing in the way.
 If one lights you up, pull over and stop to take the ticket. Running makes
-it worse. An upgraded phone (Me app) shows nearby cops on your map.
+it worse. Some intersections have traffic lights; a few have red light
+cameras, and some streets have speed cameras. Cameras mail you a ticket
+(a bill, due in a week). An upgraded phone (Me app) shows nearby cops and
+cameras on your map and warns you before a camera.
 
 HOW TO PLAY
 Open your phone and go online in a gig app. Accept offers, follow the
 beacon, and use the phone when the job asks for it. Keep yourself fed,
 rested and relieved, keep gas in the tank, change your oil, and pay
-your bills every 3 days. Save up for a better car (Honest Al's) and a
+your bills every month. Save up for a better car (cash at Honest Al's, or
+finance one at DriveThyme for more in the end) and a
 better place to live (leasing desks at Maple Court, Lakeview Towers).
 
 Rideshare apps need a 2011 or newer car. Your 1999 Rustwagon won't cut it,
@@ -426,8 +438,9 @@ func _process(_delta: float) -> void:
 
 
 func _update_mirrors() -> void:
-	var on: bool = main.car.mirrors_visible()
-	if on == _mirrors_shown:
+	var on: bool = main.car.hud_mirrors()
+	# Checked against the real state every frame, so the overlays can't get stuck hidden.
+	if on == _mirrors_shown and _mirrors.rear.visible == on:
 		return
 	_mirrors_shown = on
 	for key in _mirrors:
@@ -462,7 +475,7 @@ func _fmt_money(v: float) -> String:
 
 
 func set_prompt(text: String) -> void:
-	_prompt.text = "[E]  " + text if text != "" else ""
+	_prompt.text = "[%s]  %s" % [Game.key("interact"), text] if text != "" else ""
 
 
 ## Updates the turn-by-turn banner from the GPS node (hidden when there is no route).
@@ -532,7 +545,7 @@ func _on_offer(o: Dictionary) -> void:
 	var text := "%s: new offer $%.2f" % [a.name, o.pay]
 	if o.kind != "flex":
 		text += "  •  %.1f mi" % o.miles
-	toast(text + "   (Tab to open phone)", "money")
+	toast(text + "   (%s to open phone)" % Game.key("phone"), "money")
 
 
 ## options: [{text, cb: Callable, disabled: bool}]
@@ -551,7 +564,7 @@ func show_menu(title: String, options: Array) -> void:
 			cb.call())
 		_menu_list.add_child(b)
 	var close := Button.new()
-	close.text = "Close  (Esc / B)"
+	close.text = "Close  (%s)" % Game.key("back")
 	close.pressed.connect(close_menu)
 	_menu_list.add_child(close)
 	_menu.visible = true
@@ -587,3 +600,10 @@ func _on_slept(hours: float) -> void:
 	tw.tween_interval(1.5)
 	tw.tween_property(_fade, "color:a", 0.0, 1.2)
 	tw.parallel().tween_property(_fade_label, "modulate:a", 0.0, 1.2)
+
+
+## Bright white flash, like a traffic camera going off.
+func flash() -> void:
+	_flash.color.a = 0.75
+	var tw := create_tween()
+	tw.tween_property(_flash, "color:a", 0.0, 0.45)

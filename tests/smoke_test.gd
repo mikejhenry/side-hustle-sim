@@ -98,14 +98,18 @@ func _ready() -> void:
 	var ai: Node3D = tr.cars[0]
 	var block := ai.global_position + ai.global_basis.z * 13.0
 	main.car.teleport(Transform3D(ai.global_basis, block + Vector3(0, 0.5, 0)))
-	for i in 240:
+	# It may be waiting at a red light first, so give it time to roll up and stop.
+	for i in 900:
 		await get_tree().physics_frame
+		if i > 240 and ai.speed < 0.1:
+			break
 	var gap_now: float = ai.global_position.distance_to(main.car.global_position)
 	check(ai.speed < 0.5 and gap_now > 4.0, "traffic stops for your car (gap %.1f m, speed %.1f)" % [gap_now, ai.speed])
 	main.car.teleport(main.town.car_spawn)
 	await _police_tests(tr)
 	await _ui_tests()
 	await _pedestrian_tests()
+	await _light_tests(tr)
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -191,6 +195,8 @@ func _ready() -> void:
 			var t: Dictionary = Gigs.target()
 			var n: int = Gigs.job.stops.size()
 			await _use_nearest_with("Deliver", t.pos, 4.0)
+			check(not Gigs.job.photo_due.is_empty(), "package waits for a photo")
+			Gigs.confirm_package_photo()
 			if Gigs.job.get("stops", []).size() == n:
 				break
 		check(Gigs.job.is_empty(), "block complete")
@@ -203,13 +209,29 @@ func _ready() -> void:
 	Game.money = 5000.0
 	Game.sleep(10.0, 1.0)
 	check(Game.energy > 50.0, "sleep restores energy (%.0f)" % Game.energy)
-	Game.advance(1440.0 * 3)
-	check(Game.day >= d0 + 3, "3 days passed")
+	check(GameData.BILL_CYCLE_DAYS == 30, "bills are monthly")
+	Game.advance(1440.0 * GameData.BILL_CYCLE_DAYS)
+	check(Game.day >= d0 + GameData.BILL_CYCLE_DAYS, "a month passed")
 	check(Game.unpaid_bills().all(func(b): return b.due_day > Game.day or b.paid), "bills auto-paid")
 	Game.money = 0.0
-	Game.advance(1440.0 * 6)
+	Game.advance(1440.0 * (GameData.BILL_CYCLE_DAYS + GameData.EVICTION_GRACE_DAYS + 1))
 	check(Game.evicted, "evicted after not paying rent")
 	check(not Game.phone_service, "phone suspended after not paying")
+
+	print("Financing")
+	Game.money = 40000.0
+	var terms: Dictionary = Game.finance_terms("passit")
+	check(terms.total > float(GameData.CARS.passit.price), "financing costs more than cash ($%.0f vs $%.0f)" % [terms.total, GameData.CARS.passit.price])
+	check(Game.finance_car("passit") and Game.car_id == "passit" and not Game.loan.is_empty(), "financed a car")
+	check(not Game.buy_car("civil"), "can't trade in a car you still owe on")
+	Game.money = 0.0
+	# The first payment is billed at the start of the next cycle and due at its end.
+	Game.advance(1440.0 * (GameData.BILL_CYCLE_DAYS * 2 + GameData.REPO_GRACE_DAYS + 1))
+	check(Game.car_id == "rustwagon" and Game.loan.is_empty(), "car repossessed after a missed payment")
+	Game.money = 40000.0
+	check(Game.finance_car("pious"), "financed again")
+	var payoff: float = Game.loan_payoff()
+	check(payoff > 0.0 and Game.pay_off_loan() and Game.loan.is_empty() and Game.car_id == "pious", "paid off loan ($%.0f)" % payoff)
 
 	print("Shops")
 	Game.money = 40000.0
@@ -227,6 +249,75 @@ func _ready() -> void:
 	get_tree().quit(1 if failures > 0 else 0)
 
 
+func _light_tests(tr: Traffic) -> void:
+	print("Traffic lights and cameras")
+	var tc: TrafficControl = main.traffic_control
+	check(tc.cameras.size() >= 6, "cameras: %d" % tc.cameras.size())
+	tc.set_physics_process(false)
+	tc._t = 25.0   # north-south red, east-west green
+	tc._update_lamps(true)
+	check(tc.color("ns") == "red" and tc.color("ew") == "green", "light cycle")
+	check(tc.must_stop(Vector2i(2, 2), Vector2i(0, 1), 20.0) and not tc.must_stop(Vector2i(2, 2), Vector2i(1, 0), 20.0), "who stops at a light")
+	# An AI car heading south toward the light at (2, 2) stops before the intersection.
+	var ai: Traffic.AICar = tr.cars[1]
+	ai._legs.clear()
+	ai._node_from = Vector2i(2, 1)
+	ai._dir = Vector2i(0, 1)
+	ai._queue_straight()
+	ai._s = 15.0
+	ai.speed = 8.0
+	for i in 360:
+		await get_tree().physics_frame
+	var stop_z: float = 2 * main.town.B - Traffic.HALF
+	check(ai.speed < 0.5 and ai.global_position.z < stop_z, "AI car stops at a red light (%.1f m short, speed %.1f)" % [stop_z - ai.global_position.z, ai.speed])
+	tc._t = 2.0    # north-south green
+	tc._update_lamps(true)
+	for i in 240:
+		await get_tree().physics_frame
+	check(ai.global_position.z > stop_z or ai._dir != Vector2i(0, 1), "AI car goes on green")
+	# Red light camera: drive into a red at (2, 2) heading south.
+	tc._t = 25.0
+	var c := Vector3(2 * main.town.B, 0, 2 * main.town.B)
+	var bills0 := Game.unpaid_bills().size()
+	tc._inside.clear()
+	tc._check_red_lights(c + Vector3(-3.5, 0, -14), Vector3(0, 0, 12))
+	tc._check_red_lights(c + Vector3(-3.5, 0, -6), Vector3(0, 0, 12))
+	check(Game.unpaid_bills().size() == bills0 + 1, "red light camera mails a ticket")
+	tc._check_red_lights(c + Vector3(-3.5, 0, -2), Vector3(0, 0, 12))
+	check(Game.unpaid_bills().size() == bills0 + 1, "only one ticket per red light")
+	# Speed camera: pass it at 60 mph.
+	var cam: Dictionary = tc.cameras.filter(func(x): return x.kind == "speed")[0]
+	var along: Vector3 = cam.axis
+	var lane: Vector3 = cam.pos + Traffic.right_of(along) * Traffic.LANE
+	tc._cam_side.clear()
+	tc._check_speed_cameras(lane - along * 5.0, along * 27.0)
+	tc._check_speed_cameras(lane + along * 5.0, along * 27.0)
+	check(Game.unpaid_bills().size() == bills0 + 2, "speed camera mails a ticket")
+	tc._check_speed_cameras(lane - along * 5.0 + Vector3(0, 0, 0.01), along * 12.0)
+	tc._check_speed_cameras(lane + along * 5.0, along * 12.0)
+	check(Game.unpaid_bills().size() == bills0 + 2, "no ticket under the limit")
+	# Markers only with the upgraded phone.
+	var had := Game.phone_pro
+	Game.phone_pro = false
+	tc.set_physics_process(true)
+	await get_tree().physics_frame
+	var hidden: bool = not cam.marker.visible
+	Game.phone_pro = true
+	await get_tree().physics_frame
+	check(hidden and cam.marker.visible, "cameras show on the map with the upgraded phone")
+	Game.phone_pro = had
+	for b in Game.bills:
+		if b.kind == "ticket":
+			b.paid = true
+	# Prompts follow the device you're using.
+	Game.using_pad = false
+	var kb := Game.key("interact")
+	Game.using_pad = true
+	var pad := Game.key("interact")
+	Game.using_pad = false
+	check(kb == "E" and pad == "X", "prompts switch between keyboard and gamepad")
+
+
 func _police_tests(tr: Traffic) -> void:
 	print("Police")
 	check(tr.cops.size() == Traffic.COP_COUNT, "police cars: %d" % tr.cops.size())
@@ -234,6 +325,9 @@ func _police_tests(tr: Traffic) -> void:
 	main.enter_car()
 	await frames(5)
 	check(car.mirrors_visible(), "mirrors on in first person")
+	await frames(3)
+	check(car._mirror_glass.size() == 3 and car._mirror_glass[0][1].albedo_texture != null, "mirror glass in the car shows the picture")
+	Game.mirror_mode = 1
 	await frames(10)
 	check(main.hud._mirrors.rear.visible and main.hud._mirrors.left.visible, "HUD shows mirrors")
 	check(car.mirror_texture("rear") != null, "rearview has a texture")
@@ -241,6 +335,13 @@ func _police_tests(tr: Traffic) -> void:
 	await frames(2)
 	check(not main.hud._mirrors.rear.visible, "mirrors hidden in chase camera")
 	car.toggle_camera()
+	# Out of the car and back in (what Mike did after a delivery): mirrors come back.
+	main.exit_car()
+	await frames(5)
+	main.enter_car()
+	await frames(5)
+	check(main.hud._mirrors.rear.visible and car._mirror_glass[0][1].albedo_texture != null, "mirrors back after getting out and in")
+	Game.mirror_mode = 0
 	tr.police_enabled = true
 	var cop = tr.cops[0]
 	var fwd: Vector3 = cop.global_basis.z
@@ -339,6 +440,52 @@ func _ui_tests() -> void:
 			check(not tut.target().is_empty(), "  has a GPS target: %s" % tut.target().get("label", ""))
 	tut.finish(true)
 	check(not tut.active, "tutorial skipped")
+	await _gamepad_phone_test()
+
+
+func _pad(button: JoyButton) -> void:
+	for pressed in [true, false]:
+		var e := InputEventJoypadButton.new()
+		e.button_index = button
+		e.pressed = pressed
+		Input.parse_input_event(e)
+		await frames(3)
+
+
+## Drive the phone with only the gamepad: Y opens it, D-pad moves, A picks, B backs out.
+func _gamepad_phone_test() -> void:
+	print("Gamepad menus")
+	if main.phone.is_open:
+		main.phone.close()
+	# Start from keyboard/mouse, so the first gamepad press is also the one that opens the phone.
+	Game.using_pad = false
+	await _pad(JOY_BUTTON_Y)
+	await frames(5)
+	check(main.phone.is_open, "Y opens the phone")
+	var f = get_viewport().gui_get_focus_owner()
+	check(f != null, "phone focuses a button (%s)" % (f.text if f is Button else str(f)))
+	var screen0: String = main.phone.current_app
+	await _pad(JOY_BUTTON_DPAD_DOWN)
+	var f2 = get_viewport().gui_get_focus_owner()
+	check(f2 != null and f2 != f, "D-pad moves focus (%s)" % (f2.text if f2 is Button else str(f2)))
+	await _pad(JOY_BUTTON_A)
+	await frames(5)
+	var screen1: String = main.phone.current_app
+	check(screen1 != screen0, "A opens the focused app (%s -> %s)" % [screen0, screen1])
+	check(get_viewport().gui_get_focus_owner() != null, "app screen has focus")
+	await _pad(JOY_BUTTON_B)
+	await frames(5)
+	var screen2: String = main.phone.current_app
+	check(screen2 == screen0 or not main.phone.is_open, "B goes back (%s)" % screen2)
+	if main.phone.is_open:
+		main.phone.close()
+	await _pad(JOY_BUTTON_START)
+	await frames(5)
+	check(main.pause_menu.is_open, "Start opens the pause menu")
+	await _pad(JOY_BUTTON_A)
+	await frames(5)
+	check(not main.pause_menu.is_open and not get_tree().paused, "A picks Resume")
+	Game.using_pad = false
 
 
 ## Teleports the player next to the closest interactable whose prompt contains `text`

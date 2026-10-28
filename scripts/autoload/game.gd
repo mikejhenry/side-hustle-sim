@@ -35,6 +35,7 @@ var engine_health: float
 var odometer: float
 
 var bills: Array = []
+var loan := {}              # car loan: {lender, car, payment, left}; empty when none
 var transactions: Array = []
 var stats := {}
 
@@ -77,6 +78,7 @@ func new_game() -> void:
 	engine_health = 82.0
 	odometer = c.odometer
 	bills = []
+	loan = {}
 	transactions = []
 	stats = {"earned": 0.0, "spent": 0.0, "jobs": 0, "miles": 0.0}
 	_warned = {}
@@ -276,9 +278,17 @@ func ticket(reason: String, amount: float) -> void:
 		spend(amount, "Ticket: " + reason)
 		notify("Ticket for %s: $%.0f, paid." % [reason, amount], "bad")
 	else:
-		_add_bill("Traffic ticket: " + reason, amount, day + GameData.BILL_CYCLE_DAYS, "ticket")
+		_add_bill("Traffic ticket: " + reason, amount, day + GameData.TICKET_DUE_DAYS, "ticket")
 		bills_changed.emit()
-		notify("Ticket for %s: $%.0f. You can't cover it, so it's a bill due in %d days." % [reason, amount, GameData.BILL_CYCLE_DAYS], "bad")
+		notify("Ticket for %s: $%.0f. You can't cover it, so it's a bill due in %d days." % [reason, amount, GameData.TICKET_DUE_DAYS], "bad")
+
+
+## Camera ticket: no cop, it arrives in the mail as a bill.
+func mail_ticket(reason: String, amount: float) -> void:
+	stats["tickets"] = int(stats.get("tickets", 0)) + 1
+	_add_bill("Camera ticket: " + reason, amount, day + GameData.TICKET_DUE_DAYS, "ticket")
+	bills_changed.emit()
+	notify("📸 Flash! Ticket in the mail for %s: $%.0f, due in %d days (Bank app)." % [reason, amount, GameData.TICKET_DUE_DAYS], "bad")
 
 
 func buy_phone_upgrade() -> bool:
@@ -299,6 +309,11 @@ func _generate_bills(start_day: int) -> void:
 		_add_bill("Rent: " + home().short, home().rent, due, "rent")
 	_add_bill("Phone plan (TalkMore Wireless)", GameData.PHONE_BILL, due, "phone")
 	_add_bill("Car insurance (GEICKO)", car().insurance, due, "insurance")
+	if not loan.is_empty() and int(loan.left) > 0:
+		_add_bill("Car loan (%s, %d left)" % [loan.lender, int(loan.left) - 1], float(loan.payment), due, "loan")
+		loan.left = int(loan.left) - 1
+		if loan.left <= 0:
+			loan = {}
 	bills_changed.emit()
 
 
@@ -343,6 +358,8 @@ func process_bills() -> void:
 			continue
 		if b.kind == "rent" and day - b.due_day >= GameData.EVICTION_GRACE_DAYS and not evicted:
 			_evict()
+		if b.kind == "loan" and day - b.due_day >= GameData.REPO_GRACE_DAYS:
+			_repossess()
 		if b.kind == "phone" and day - b.due_day >= 1 and phone_service:
 			phone_service = false
 			Gigs.go_offline_all()
@@ -361,6 +378,26 @@ func _evict() -> void:
 			b.name += " (sent to collections)"
 	notify("You've been EVICTED. You'll have to sleep in your car until you sign a new lease.", "bad")
 	home_changed.emit()
+
+
+## Missed car payments: the lender takes the car. You're left with a beat-up Rustwagon from
+## their back lot, and the rest of the loan goes to collections.
+func _repossess() -> void:
+	var lost: String = car().name
+	for b in bills:
+		if b.kind == "loan" and not b.paid:
+			b.paid = true
+			b.name += " (sent to collections)"
+	loan = {}
+	car_id = "rustwagon"
+	var c := car()
+	fuel = c.tank * 0.25
+	oil_life = 30.0
+	tire_tread = 30.0
+	engine_health = 60.0
+	odometer = c.odometer
+	notify("Your %s was REPOSSESSED for missed payments. %s left you a beat-up Rustwagon." % [lost, GameData.FINANCE_NAME], "bad")
+	car_changed.emit()
 
 
 # --- Housing ---------------------------------------------------------------------
@@ -476,18 +513,81 @@ func trade_in_value() -> float:
 
 func buy_car(id: String) -> bool:
 	var c: Dictionary = GameData.CARS[id]
+	if not loan.is_empty():
+		notify("Pay off your %s loan before trading in this car." % loan.lender, "bad")
+		return false
 	var cost: float = maxf(0.0, c.price - trade_in_value())
 	if not spend(cost, "Honest Al's: " + c.name):
 		return false
+	_take_delivery(id)
+	notify("You bought a %s! Insurance changes next bill cycle." % c.name, "good")
+	return true
+
+
+## Financing terms for a car: {price, down, due_now, financed, payment, total}.
+## Your trade-in goes toward the down payment first, then the loan.
+func finance_terms(id: String) -> Dictionary:
+	var c: Dictionary = GameData.CARS[id]
+	var price := roundf(float(c.price) * GameData.FINANCE_MARKUP)
+	var down := roundf(price * GameData.FINANCE_DOWN)
+	var trade := trade_in_value()
+	var due_now := maxf(0.0, down - trade)
+	var financed := price - down - maxf(0.0, trade - down)
+	var r := GameData.FINANCE_APR / 12.0
+	var n := GameData.FINANCE_MONTHS
+	var payment := snappedf(financed * r / (1.0 - pow(1.0 + r, -n)), 0.01)
+	return {"price": price, "down": down, "due_now": due_now, "financed": financed,
+		"payment": payment, "total": due_now + trade + payment * n}
+
+
+func finance_car(id: String) -> bool:
+	if not loan.is_empty():
+		notify("You already have a car loan. Pay it off first.", "bad")
+		return false
+	var t := finance_terms(id)
+	if not spend(t.due_now, "%s down payment" % GameData.FINANCE_NAME):
+		return false
+	_take_delivery(id)
+	loan = {"lender": GameData.FINANCE_NAME, "car": id, "payment": t.payment, "left": GameData.FINANCE_MONTHS}
+	notify("Drove off in a %s! $%.2f a month for %d months, starting next bill cycle. Miss a payment and they take it." % [
+		car().name, t.payment, GameData.FINANCE_MONTHS], "good")
+	bills_changed.emit()
+	return true
+
+
+## Pay the rest of the loan in one go (no discount for paying early).
+func loan_payoff() -> float:
+	var pending := 0.0
+	for b in bills:
+		if b.kind == "loan" and not b.paid:
+			pending += b.amount
+	return pending + (float(loan.payment) * int(loan.left) if not loan.is_empty() else 0.0)
+
+
+func pay_off_loan() -> bool:
+	var amount := loan_payoff()
+	if amount <= 0.0:
+		return false
+	if not spend(amount, "%s loan payoff" % GameData.FINANCE_NAME):
+		return false
+	for b in bills:
+		if b.kind == "loan" and not b.paid:
+			b.paid = true
+	loan = {}
+	notify("Loan paid off. The car is all yours.", "good")
+	bills_changed.emit()
+	return true
+
+
+func _take_delivery(id: String) -> void:
+	var c: Dictionary = GameData.CARS[id]
 	car_id = id
 	fuel = c.tank * 0.5
 	oil_life = 100.0
 	tire_tread = 100.0
 	engine_health = 100.0
 	odometer = c.odometer
-	notify("You bought a %s! Insurance changes next bill cycle." % c.name, "good")
 	car_changed.emit()
-	return true
 
 
 # --- Save / load --------------------------------------------------------------------
@@ -500,7 +600,7 @@ func save_game() -> void:
 		"car_id": car_id, "fuel": fuel, "oil_life": oil_life, "tire_tread": tire_tread,
 		"engine_health": engine_health, "odometer": odometer, "bills": bills,
 		"transactions": transactions, "stats": stats, "bill_seq": _bill_seq,
-		"ratings": Gigs.ratings, "phone_pro": phone_pro,
+		"ratings": Gigs.ratings, "phone_pro": phone_pro, "loan": loan,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -530,6 +630,9 @@ func load_game() -> bool:
 	evicted = bool(data.get("evicted", false))
 	fridge_meals = int(data.get("fridge_meals", 0))
 	phone_pro = bool(data.get("phone_pro", false))
+	loan = data.get("loan", {})
+	if not loan.is_empty():
+		loan.left = int(loan.left)
 	car_id = str(data.get("car_id", "rustwagon"))
 	bills = data.get("bills", [])
 	for b in bills:
@@ -564,6 +667,7 @@ func _setup_input() -> void:
 	_bind("look_right", [], [], [[JOY_AXIS_RIGHT_X, 1.0]])
 	_bind("look_up", [], [], [[JOY_AXIS_RIGHT_Y, -1.0]])
 	_bind("look_down", [], [], [[JOY_AXIS_RIGHT_Y, 1.0]])
+	_pad_menus()
 	_bind("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
 	_bind("jump", [KEY_SPACE], [JOY_BUTTON_A])
 	_bind("handbrake", [KEY_SPACE], [JOY_BUTTON_A])
@@ -608,6 +712,33 @@ func _bind(action: String, keys: Array, buttons: Array = [], axes: Array = []) -
 
 var using_pad := false
 
+## On-screen names of controls: [keyboard, gamepad]. Prompts use key() so they always name
+## whichever device you touched last.
+const KEY_NAMES := {
+	"interact": ["E", "X"], "phone": ["Tab", "Y"], "pause": ["Esc", "Start"], "back": ["Esc", "B"],
+	"help": ["F1", "Back"], "mirrors": ["M", "D-pad up"], "camera_toggle": ["C", "LB"],
+	"headlights": ["L", "RB"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
+	"handbrake": ["Space", "A"], "sprint": ["Shift", "L3"], "jump": ["Space", "A"],
+	"gas": ["W", "RT"], "brake": ["S", "LT"], "move": ["WASD", "the left stick"],
+	"look": ["the mouse", "the right stick"], "graphics": ["F3", "the pause menu"],
+	"save_game": ["F5", "the pause menu"], "load_game": ["F9", "the pause menu"],
+}
+
+
+## Right-stick look with a response curve: small pushes make small, slow turns, so it pans
+## like a head instead of snapping. (The 0.25 deadzone is applied by get_vector.)
+func look_stick() -> Vector2:
+	var v := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+	var m := v.length()
+	if m < 0.001:
+		return Vector2.ZERO
+	return v / m * pow(minf(m, 1.0), 1.8)
+
+
+func key(action: String) -> String:
+	var names: Array = KEY_NAMES.get(action, [action, action])
+	return names[1] if using_pad else names[0]
+
 
 # --- Options (saved in user://settings.cfg, separate from save games) -----------------
 
@@ -615,6 +746,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 var volume := 0.8           # master volume 0..1
 var mouse_sens := 1.0       # multiplier
 var pad_sens := 1.0         # right-stick look speed multiplier
+var mirror_mode := 0        # 0 = mirrors in the car, 1 = car + screen overlays, 2 = off
 
 
 func load_options() -> void:
@@ -623,6 +755,7 @@ func load_options() -> void:
 		volume = float(cfg.get_value("options", "volume", volume))
 		mouse_sens = float(cfg.get_value("options", "mouse_sens", mouse_sens))
 		pad_sens = float(cfg.get_value("options", "pad_sens", pad_sens))
+		mirror_mode = int(cfg.get_value("options", "mirror_mode", mirror_mode))
 	apply_volume()
 
 
@@ -632,6 +765,7 @@ func save_options() -> void:
 	cfg.set_value("options", "volume", volume)
 	cfg.set_value("options", "mouse_sens", mouse_sens)
 	cfg.set_value("options", "pad_sens", pad_sens)
+	cfg.set_value("options", "mirror_mode", mirror_mode)
 	cfg.save(SETTINGS_PATH)
 
 
@@ -641,19 +775,49 @@ func apply_volume() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	track_device(event)
+
+
+## Menus on the gamepad: A picks the highlighted option, B backs out. Godot's defaults don't
+## include A, and they put Y on "select", which would press a button while closing the phone.
+func _pad_menus() -> void:
+	for e in InputMap.action_get_events("ui_select"):
+		if e is InputEventJoypadButton:
+			InputMap.action_erase_event("ui_select", e)
+	for pair in [["ui_accept", JOY_BUTTON_A], ["ui_cancel", JOY_BUTTON_B]]:
+		if not InputMap.action_get_events(pair[0]).any(func(e): return e is InputEventJoypadButton and e.button_index == pair[1]):
+			var ev := InputEventJoypadButton.new()
+			ev.button_index = pair[1]
+			InputMap.action_add_event(pair[0], ev)
+
+
+## Notes whether you're on the gamepad or keyboard/mouse. Main calls this too, because it
+## handles some buttons (like opening the phone) before this autoload sees them.
+func track_device(event: InputEvent) -> void:
+	var vp := get_viewport()
 	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.5):
 		using_pad = true
+		# A menu is open but nothing is highlighted yet: highlight its first option, so the
+		# D-pad and A work right away.
+		if vp and vp.gui_get_focus_owner() == null and is_instance_valid(_focus_root) \
+				and _focus_root.is_visible_in_tree():
+			pad_focus.call_deferred(_focus_root)
 	elif event is InputEventKey or event is InputEventMouseButton:
 		if using_pad:
 			using_pad = false
-		var vp := get_viewport()
 		if vp and vp.gui_get_focus_owner() and event is InputEventKey:
 			vp.gui_release_focus()
 
 
-## Focus the first enabled button under `root` when a gamepad is in use.
+var _focus_root: Node = null
+
+## Focus the first enabled button under `root` when a gamepad is in use. Also remembers
+## `root` as the open menu, so switching to the gamepad later can still highlight it.
 func pad_focus(root: Node, index := 0) -> void:
-	if not using_pad or root == null:
+	if root == null:
+		return
+	_focus_root = root
+	if not using_pad:
 		return
 	var buttons := root.find_children("*", "Control", true, false).filter(
 		func(b): return b.is_visible_in_tree() and ((b is BaseButton and not b.disabled) or b is Slider))

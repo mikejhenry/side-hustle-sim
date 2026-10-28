@@ -17,6 +17,7 @@ var driving := false
 var map_waypoint: Dictionary = {}
 var gps: GPS
 var traffic: Traffic
+var traffic_control: TrafficControl
 var pedestrians: Pedestrians
 var pause_menu: PauseMenu
 var tutorial: Tutorial
@@ -67,6 +68,12 @@ func _ready() -> void:
 	traffic.main = self
 	add_child(traffic)
 	traffic.build()
+	traffic_control = TrafficControl.new()
+	traffic_control.town = town
+	traffic_control.main = self
+	add_child(traffic_control)
+	traffic_control.build()
+	traffic_control.ran_red_light.connect(traffic.on_ran_red_light)
 	pedestrians = Pedestrians.new()
 	pedestrians.town = town
 	pedestrians.main = self
@@ -93,8 +100,8 @@ func _ready() -> void:
 	if auto_tutorial and not Tutorial.is_done():
 		tutorial.start()
 	else:
-		hud.toast("Welcome to New Castlewood County! Press F1 for controls. Tab opens your phone.", "info")
-		hud.toast("Rent is due in 3 days and your Rustwagon needs an oil change. Time to hustle.", "warn")
+		hud.toast("Welcome to New Castlewood County! %s shows the controls. %s opens your phone." % [Game.key("help"), Game.key("phone")], "info")
+		hud.toast("Rent is due at the end of the month and your Rustwagon needs an oil change. Time to hustle.", "warn")
 
 
 func _notify_sound(_text: String, kind: String) -> void:
@@ -195,7 +202,7 @@ func toggle_graphics() -> void:
 	cfg.load(SETTINGS_PATH)
 	cfg.set_value("graphics", "low", low_graphics)
 	cfg.save(SETTINGS_PATH)
-	hud.toast("Graphics: %s (F3 to change)" % ("low" if low_graphics else "high"), "info")
+	hud.toast("Graphics: %s" % ("low" if low_graphics else "high"), "info")
 
 
 # --- Queries used by other systems ------------------------------------------------
@@ -365,6 +372,7 @@ func _update_night() -> void:
 # --- Input ---------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
+	Game.track_device(event)
 	if event.is_action_pressed("phone"):
 		if not hud.menu_open:
 			phone.toggle()
@@ -400,8 +408,9 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("headlights") and driving:
 		car.set_headlights(not car.headlights_on)
 	elif event.is_action_pressed("mirrors") and driving:
-		car.mirrors_enabled = not car.mirrors_enabled
-		hud.toast("Mirrors %s (M)" % ("on" if car.mirrors_enabled else "off"), "info")
+		Game.mirror_mode = (Game.mirror_mode + 1) % 3
+		Game.save_options()
+		hud.toast("Mirrors: %s (%s to change)" % [["in the car", "in the car + on screen", "off"][Game.mirror_mode], Game.key("mirrors")], "info")
 
 
 func _unhandled_input(event: InputEvent) -> void:

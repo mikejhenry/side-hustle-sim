@@ -10,6 +10,8 @@ var _list: VBoxContainer
 var _menu: PanelContainer
 var _help: PanelContainer
 var _settings: PanelContainer
+var _mirror_btn: Button
+const MIRROR_NAMES := ["in the car", "in the car + on screen", "off"]
 
 
 func _ready() -> void:
@@ -72,6 +74,7 @@ func _show_settings(on: bool) -> void:
 	_settings.visible = on
 	_menu.visible = not on
 	if on:
+		_mirror_btn.text = "Mirrors: %s" % MIRROR_NAMES[Game.mirror_mode]
 		Game.pad_focus.call_deferred(_settings)
 	else:
 		Game.save_options()
@@ -92,6 +95,13 @@ func _build_settings() -> void:
 		Game.apply_volume())
 	_slider(v, "Mouse sensitivity", 0.3, 2.5, Game.mouse_sens, func(x): Game.mouse_sens = x)
 	_slider(v, "Gamepad look speed", 0.3, 2.5, Game.pad_sens, func(x): Game.pad_sens = x)
+	_mirror_btn = Button.new()
+	_mirror_btn.add_theme_font_size_override("font_size", 17)
+	_mirror_btn.custom_minimum_size.y = 38
+	_mirror_btn.pressed.connect(func():
+		Game.mirror_mode = (Game.mirror_mode + 1) % 3
+		_mirror_btn.text = "Mirrors: %s" % MIRROR_NAMES[Game.mirror_mode])
+	v.add_child(_mirror_btn)
 	var hint := Label.new()
 	hint.text = "Gamepad: D-pad up/down to pick, left/right to change."
 	hint.add_theme_font_size_override("font_size", 13)

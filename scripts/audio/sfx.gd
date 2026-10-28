@@ -38,6 +38,7 @@ static func _build(sound_name: String) -> AudioStreamWAV:
 		"bad": return _wav(_chime([392.0, 311.1], 0.14), false)
 		"crash": return _wav(_crash(), false)
 		"ambience": return _wav(_ambience(), true)
+		"shutter": return _wav(_shutter(), false)
 	return _wav(PackedFloat32Array([0.0]), false)
 
 
@@ -141,6 +142,24 @@ static func _crash() -> PackedFloat32Array:
 		var thump := sin(TAU * 55.0 * t) * exp(-t * 12.0)
 		var rattle := rng.randf_range(-1.0, 1.0) * exp(-t * 5.0) * 0.25 * (1.0 if fmod(t, 0.06) < 0.03 else 0.4)
 		out[i] = clampf((lp * exp(-t * 6.0) + thump + rattle) * 0.7, -1.0, 1.0)
+	return out
+
+
+## Camera shutter: two quick mechanical clicks.
+static func _shutter() -> PackedFloat32Array:
+	var n := int(RATE * 0.25)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for i in n:
+		var t := float(i) / RATE
+		var s := 0.0
+		for start in [0.0, 0.11]:
+			var u: float = t - start
+			if u >= 0.0:
+				s += (rng.randf_range(-1.0, 1.0) * 0.7 + sin(TAU * 2400.0 * u) * 0.3) * exp(-u * 90.0)
+		out[i] = clampf(s, -1.0, 1.0) * 0.8
 	return out
 
 

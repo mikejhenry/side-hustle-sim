@@ -53,7 +53,7 @@ func _ready() -> void:
 	_body.custom_minimum_size.x = 352
 	v.add_child(_body)
 	var hint := Label.new()
-	hint.text = "Skip from the pause menu (Esc / Start)"
+	hint.text = "Skip from the pause menu"
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.add_theme_color_override("font_color", Color(0.75, 0.8, 0.78))
 	v.add_child(hint)
@@ -115,7 +115,7 @@ func _build_steps() -> void:
 		_visit("Jungle Flex", "Jungle Flex Station",
 			func(): return "Next: the Jungle Flex station. Accept a delivery block in the app, scan packages here, then deliver the whole route."),
 		_visit("Dottie", "Home sweet home",
-			func(): return "Last stop: your rented room at Dottie's. Sleep in your bed, eat from the fridge, use the toilet. Rent, phone and insurance are due every 3 days, so pay them in the Bank app. Bigger places to rent have leasing desks."),
+			func(): return "Last stop: your rented room at Dottie's. Sleep in your bed, eat from the fridge, use the toilet. Rent, phone and insurance are due once a month (they auto-pay if you have the money; check the Bank app). Bigger places to rent have leasing desks."),
 		{"title": "Go to work",
 			"text": func(): return "Open your phone (%s), open DoorDish and tap GO ONLINE. Offers pop up as messages. Accept one, follow the GPS, and use the phone when the job asks.\n\nTip: the Me app sells a phone upgrade that shows cops on your map." % k("Tab", "Y"),
 			"done": func(): return Gigs.online.values().has(true)},

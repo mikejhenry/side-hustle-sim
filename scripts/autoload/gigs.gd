@@ -342,6 +342,8 @@ func target() -> Dictionary:
 		"flex":
 			if job.stage == "to_station":
 				return {"pos": town.station.door, "label": "Jungle Flex station"}
+			if job.stage == "delivering" and not job.get("photo_due", {}).is_empty():
+				return {"pos": job.photo_due.door, "label": "Photo at " + job.photo_due.name}
 			if job.stage == "delivering" and not job.stops.is_empty():
 				var me := _actor_pos()
 				var best: Dictionary = job.stops[0]
@@ -371,7 +373,11 @@ func status_text() -> String:
 				t = "Block starts %s. Scanning opens 30 min before." % Game.abs_time_string(job.start)
 			else:
 				t = "Drive into the Jungle Flex station and scan your packages in the app."
-		"delivering": t = "Deliver packages: %d left. Ends %s." % [job.stops.size(), Game.abs_time_string(job.end)]
+		"delivering":
+			if not job.get("photo_due", {}).is_empty():
+				t = "Open your phone and take the drop-off photo."
+			else:
+				t = "Deliver packages: %d left. Ends %s." % [job.stops.size(), Game.abs_time_string(job.end)]
 	return "%s: %s" % [a.name, t]
 
 
@@ -449,7 +455,7 @@ func leave_at_door() -> void:
 
 
 func confirm_photo() -> void:
-	if job.get("stage", "") != "confirm_photo":
+	if job.get("stage", "") != "confirm_photo" or not can_take_photo():
 		return
 	var late: bool = Game.total_minutes() > job.deadline
 	var stars := 4.0 if late else 5.0
@@ -474,13 +480,28 @@ func scan_packages() -> void:
 	job_changed.emit()
 
 
+## Leaves a Jungle Flex package at the door. Like the other apps, it only counts once you
+## take the drop-off photo in the app.
 func deliver_package(addr_name: String) -> void:
+	if job.get("photo_due", {}).size() > 0:
+		return
 	for s in job.stops:
 		if s.name == addr_name:
-			job.stops.erase(s)
-			job.delivered += 1
+			job.photo_due = s
 			break
-	Game.notify("Package delivered to %s." % addr_name, "good")
+	Game.notify("Package left at %s. Take the drop-off photo in the app." % addr_name, "info")
+	job_changed.emit()
+
+
+## Drop-off photo for a Jungle Flex package. You have to be near the door.
+func confirm_package_photo() -> void:
+	var s: Dictionary = job.get("photo_due", {})
+	if s.is_empty() or not can_take_photo():
+		return
+	job.photo_due = {}
+	job.stops.erase(s)
+	job.delivered += 1
+	Game.notify("Photo sent. Package delivered to %s." % s.name, "good")
 	if job.stops.is_empty():
 		var stars := 5.0 if Game.total_minutes() <= job.end else 4.0
 		_complete(stars, 0.0, "Block complete!")
@@ -488,12 +509,22 @@ func deliver_package(addr_name: String) -> void:
 		job_changed.emit()
 
 
+## Drop-off photos are taken at the door (within a few steps of it).
+func can_take_photo() -> bool:
+	if job.is_empty():
+		return false
+	if job.get("stage", "") == "confirm_photo":
+		return near(job.customer.door, 8.0)
+	var s: Dictionary = job.get("photo_due", {})
+	return not s.is_empty() and near(s.door, 8.0)
+
+
 func door_prompt(addr: Dictionary) -> String:
 	if job.is_empty():
 		return ""
 	if job.kind in ["food", "grocery"] and job.stage == "to_customer" and job.customer.name == addr.name:
 		return "Leave %s order at the door" % app(job.app).name
-	if job.kind == "flex" and job.stage == "delivering":
+	if job.kind == "flex" and job.stage == "delivering" and job.get("photo_due", {}).is_empty():
 		for s in job.stops:
 			if s.name == addr.name:
 				return "Deliver Jungle Flex package"

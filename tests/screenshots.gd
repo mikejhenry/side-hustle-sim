@@ -87,6 +87,37 @@ func _ready() -> void:
 	main.player.yaw = atan2(pf.x, pf.z)
 	main.player.pitch = -0.1
 	await shot("12_pedestrian")
+	# Red light camera intersection, first person, light red for us.
+	var tc: TrafficControl = main.traffic_control
+	tc._t = 25.0
+	tc._update_lamps(true)
+	tc.set_physics_process(false)
+	main.enter_car()
+	main.car.teleport(Transform3D(Basis.IDENTITY, Vector3(2 * 90 - 3.5, 0.6, 2 * 90 - 32)))
+	await frames(30)
+	await shot("13_red_light_camera")
+	# Speed camera, chase view, with the phone's camera badges on the minimap.
+	var sc: Dictionary = tc.cameras.filter(func(x): return x.kind == "speed")[0]
+	var al: Vector3 = sc.axis
+	var at: Vector3 = sc.pos - al * 22.0 + Traffic.right_of(al) * Traffic.LANE + Vector3(0, 0.6, 0)
+	main.car.teleport(Transform3D(Basis(Vector3.UP.cross(al).normalized(), Vector3.UP, al), at))
+	main.car.toggle_camera()
+	tc.set_physics_process(true)
+	await frames(30)
+	await shot("14_speed_camera")
+	main.car.toggle_camera()
+	main.exit_car()
+	# DriveThyme financing lot.
+	for pl in main.town.places:
+		if str(pl.name).begins_with("DriveThyme"):
+			var c: Vector3 = pl.curb
+			var d: Vector3 = pl.door
+			var back := (c - d).normalized()
+			main.player.global_position = c + back * 4.0 + Vector3(0, 1, 0)
+			main.player.yaw = atan2(back.x, back.z)
+			main.player.pitch = -0.08
+			break
+	await shot("15_drivethyme_lot")
 	Game.minute = 21 * 60.0
 	main.player.global_position = main.town.spawn_point
 	main.enter_car()

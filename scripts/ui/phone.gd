@@ -340,11 +340,15 @@ func _job_card(_id: String) -> void:
 			_live_button(v, "COMPLETE TRIP", func(): Gigs.end_trip(), func(): return Gigs.can_end_trip(), Color(0.1, 0.5, 0.25))
 			_lbl(v, "Passenger: %s. Drive smoothly, crashes cost stars." % j.passenger, 12, Color(0.7, 0.7, 0.75))
 		"confirm_photo":
-			_btn(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_photo(), Color(0.1, 0.5, 0.25))
+			_live_button(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_photo(), func(): return Gigs.can_take_photo(), Color(0.1, 0.5, 0.25))
+			_lbl(v, "Stand by the door to take the photo.", 12, Color(0.7, 0.7, 0.75))
 		"to_station":
 			_live_button(v, "SCAN PACKAGES", func(): Gigs.scan_packages(), func(): return Gigs.can_scan(), Color(0.1, 0.5, 0.25))
 			_lbl(v, "Drive into the station's loading zone. Scanning opens 30 min before the block.", 12, Color(0.7, 0.7, 0.75))
 		"delivering":
+			if not j.get("photo_due", {}).is_empty():
+				_live_button(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_package_photo(), func(): return Gigs.can_take_photo(), Color(0.1, 0.5, 0.25))
+				_lbl(v, "Package left at %s. Stand by the door to take the photo." % j.photo_due.name, 12, Color(0.7, 0.7, 0.75))
 			for s in j.stops:
 				_lbl(v, "📦 " + s.name, 13)
 	if j.kind == "grocery":
@@ -362,7 +366,9 @@ func _bank() -> void:
 	_live_label(v, func(n): n.text = "Balance: $%.2f" % Game.money, 22, Color(0.5, 1, 0.6))
 	_lbl(v, "Earned so far: $%.2f   Jobs: %d" % [Game.stats.earned, Game.stats.jobs], 13, Color(0.8, 0.8, 0.85))
 	var bills := _card()
-	_lbl(bills, "Bills (due every %d days, auto-pay at 9 AM)" % GameData.BILL_CYCLE_DAYS, 15, Color(1, 0.85, 0.5))
+	_lbl(bills, "Bills (due monthly, auto-pay at 9 AM)", 15, Color(1, 0.85, 0.5))
+	if not Game.loan.is_empty():
+		_lbl(bills, "Car loan: $%.2f a month, %d more payments (%s)" % [Game.loan.payment, int(Game.loan.left), Game.loan.lender], 13, Color(1, 0.75, 0.5))
 	var unpaid := Game.unpaid_bills()
 	if unpaid.is_empty():
 		_lbl(bills, "All paid up!", 14, Color(0.5, 1, 0.6))
@@ -434,5 +440,5 @@ func _me() -> void:
 			if Game.buy_phone_upgrade():
 				_rebuild(), func(): return Game.money >= GameData.PHONE_PRO_PRICE, Color(0.25, 0.35, 0.6))
 	var sv := _card()
-	_btn(sv, "Save game (F5)", func(): Game.save_game())
-	_btn(sv, "Load game (F9)", func(): main.load_game())
+	_btn(sv, "Save game", func(): Game.save_game())
+	_btn(sv, "Load game", func(): main.load_game())

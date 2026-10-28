@@ -12,6 +12,7 @@ var active := true
 var input_locked := false
 var yaw := 0.0
 var pitch := -0.25
+var _look_vel := Vector2.ZERO   # smoothed right-stick turn rate
 
 var camera: Camera3D
 var _pivot: Node3D
@@ -150,9 +151,12 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= gravity * delta
 	var input_dir := Vector2.ZERO
 	if not input_locked:
-		var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
-		yaw -= look.x * 2.6 * Game.pad_sens * delta
-		pitch = clampf(pitch - look.y * 1.8 * Game.pad_sens * delta, -1.2, 0.6)
+		# Right stick: curved response plus a little acceleration so turns start and stop smoothly.
+		var look := Game.look_stick()
+		var want := Vector2(-look.x * 2.3, -look.y * 1.5) * Game.pad_sens
+		_look_vel = _look_vel.lerp(want, 1.0 - exp(-9.0 * delta))
+		yaw += _look_vel.x * delta
+		pitch = clampf(pitch + _look_vel.y * delta, -1.2, 0.6)
 		input_dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		if Input.is_action_just_pressed("jump") and is_on_floor():
 			velocity.y = JUMP_VELOCITY

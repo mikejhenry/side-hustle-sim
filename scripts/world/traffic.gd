@@ -216,6 +216,16 @@ func _on_player_crash(_strength: float) -> void:
 			return
 
 
+## A cop who sees you run a red light pulls you over (cameras are handled separately).
+func on_ran_red_light(p: Vector3) -> void:
+	if chaser or _grace > 0.0 or not police_enabled or not main.is_driving():
+		return
+	for cop in cops:
+		if cop.mode == "patrol" and cop_sees(cop, p, [cop.get_rid(), main.car.get_rid()]):
+			start_chase(cop, "running a red light")
+			return
+
+
 func start_chase(cop: AICar, reason: String) -> void:
 	chaser = cop
 	chase_reason = reason
@@ -254,6 +264,8 @@ func _write_ticket() -> void:
 	var fine: float
 	if chase_reason == "reckless driving":
 		fine = GameData.RECKLESS_FINE
+	elif chase_reason == "running a red light":
+		fine = GameData.RED_LIGHT_FINE
 	else:
 		fine = GameData.TICKET_BASE + GameData.TICKET_PER_MPH * roundf(_excess_mph)
 	var reason := chase_reason
@@ -467,7 +479,16 @@ class AICar:
 
 	func _return_to_lane(delta: float) -> void:
 		var end: Vector3 = _rejoin[2]
+		_creep = maxf(0.0, _creep - delta)
 		var want := minf(Traffic.CRUISE, _gap_speed(Traffic.CRUISE))
+		# Traffic queued at a light can block the way back; nudge past it.
+		if speed < 0.3 and want < 0.5:
+			waited += delta
+			if waited > 3.0:
+				_creep = 2.5
+				waited = 0.0
+		else:
+			waited = 0.0
 		if global_position.distance_to(end) < 3.0:
 			_legs.clear()
 			_node_from = _rejoin[0]
@@ -565,6 +586,13 @@ class AICar:
 		# Brake for anything ahead in our lane.
 		_creep = maxf(0.0, _creep - delta)
 		target = _gap_speed(target)
+		# Stop for red lights (and yellows we can still stop for).
+		if leg[5]:
+			var to_line := float(leg[3]) - _s
+			var tc: TrafficControl = traffic.main.traffic_control if traffic.main else null
+			if tc and to_line < 45.0 and tc.must_stop(_node_from + _dir, _dir, to_line):
+				# Brake smoothly so we stop about 2 m before the line.
+				target = 0.0 if to_line < 2.0 else minf(target, sqrt(2.0 * Traffic.BRAKE * 0.7 * (to_line - 2.0)) + 0.3)
 		if speed < 0.3 and target < 0.5:
 			waited += delta
 			# Two AI cars blocking each other would wait forever, so one creeps through.

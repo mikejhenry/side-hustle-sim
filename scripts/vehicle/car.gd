@@ -16,6 +16,8 @@ var headlights_on := false
 
 var fp_camera: Camera3D
 var chase_camera: Camera3D
+const NECK_YAW := 1.4       # radians, how far the right stick turns your head
+const NECK_PITCH := 0.32
 var _look_yaw := 0.0
 var _look_pitch := -0.08
 var _visual: Node3D
@@ -29,11 +31,12 @@ var _flip_timer := 0.0
 
 # Mirrors: small extra views of the world rendered from cameras on the car. The HUD shows
 # their textures (flipped like a real mirror) while you drive in first person.
-var mirrors_enabled := true
 var mirror_views := {}      # "rear" / "left" / "right" -> SubViewport
 var _mirror_cams := {}      # same keys -> [Camera3D, local Transform3D]
 var _mirror_frame := 0
 var _engine: AudioStreamPlayer3D
+var _mirror_glass: Array = []    # [MeshInstance3D, material, key]
+var _glass_on := true
 
 
 func _ready() -> void:
@@ -137,8 +140,53 @@ func _place_mirror_cams() -> void:
 	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(-sz.x / 2.0 - 0.12, 1.08, 0.7))
 
 
+## True while the mirror cameras should render (first person, mirrors not switched off).
 func mirrors_visible() -> bool:
-	return mirrors_enabled and driver_active and not chase_cam
+	return Game.mirror_mode != 2 and driver_active and not chase_cam
+
+
+## True when the mirrors are also shown as screen overlays (mirror mode "car + screen").
+func hud_mirrors() -> bool:
+	return Game.mirror_mode == 1 and mirrors_visible()
+
+
+## Mirror glass on the car itself: the rearview at the top of the windshield and the two side
+## mirrors, each showing its camera's picture flipped like a real mirror.
+func _build_mirror_glass(sz: Vector3) -> void:
+	var dark := Color(0.06, 0.06, 0.07)
+	# Rearview: housing plus glass, turned a little toward the driver.
+	var rv := Node3D.new()
+	rv.position = Vector3(0.0, 1.36, 0.38)
+	rv.rotation.y = -0.45
+	_visual.add_child(rv)
+	Kit.box(rv, Vector3(0.27, 0.082, 0.03), Vector3(0, 0, 0.018), dark, false)
+	Kit.box(rv, Vector3(0.02, 0.06, 0.02), Vector3(0, 0.06, 0.03), dark, false)
+	_mirror_quad(rv, "rear", Vector2(0.25, 0.064))
+	# Side mirrors: glass on the back of the housings CarModel puts on the doors.
+	for side in [1.0, -1.0]:
+		var sm := Node3D.new()
+		sm.position = Vector3(side * (sz.x / 2.0 + 0.08), 1.08, 0.7)
+		sm.rotation.y = side * 0.2
+		_visual.add_child(sm)
+		_mirror_quad(sm, "left" if side > 0 else "right", Vector2(0.165, 0.105)).position.z = -0.052
+
+
+func _mirror_quad(parent: Node3D, key: String, size: Vector2) -> MeshInstance3D:
+	var q := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = size
+	q.mesh = qm
+	q.rotation.y = PI     # face the driver (backward)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_texture = mirror_texture(key)
+	m.uv1_scale = Vector3(-1, 1, 1)   # mirror image
+	m.uv1_offset = Vector3(1, 0, 0)
+	q.material_override = m
+	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(q)
+	_mirror_glass.append([q, m, key])
+	return q
 
 
 func mirror_texture(key: String) -> Texture2D:
@@ -147,6 +195,12 @@ func mirror_texture(key: String) -> Texture2D:
 
 func _update_mirrors() -> void:
 	var on := mirrors_visible()
+	# Glass shows the picture only while it's being rendered; otherwise plain dark glass.
+	if on != _glass_on:
+		_glass_on = on
+		for g in _mirror_glass:
+			(g[1] as StandardMaterial3D).albedo_texture = mirror_texture(g[2]) if on else null
+			(g[1] as StandardMaterial3D).albedo_color = Color.WHITE if on else Color(0.12, 0.13, 0.15)
 	if not on:
 		for key in mirror_views:
 			mirror_views[key].render_target_update_mode = SubViewport.UPDATE_DISABLED
@@ -194,6 +248,9 @@ func apply_model() -> void:
 	var sz: Vector3 = c.size
 	_place_mirror_cams()
 	_visual.add_child(CarModel.build(c, Game.car_id == "rustwagon"))
+	_mirror_glass.clear()
+	_build_mirror_glass(sz)
+	_glass_on = not mirrors_visible()   # force a refresh
 	# Interior (seen in first person): dashboard, gauges, steering wheel, seats.
 	var dash := Kit.mat(Color(0.1, 0.1, 0.11))
 	Kit.box(_visual, Vector3(sz.x - 0.2, 0.22, 0.55), Vector3(0, 0.9, 0.78), dash, false)
@@ -304,14 +361,17 @@ func _physics_process(delta: float) -> void:
 		brake = 6.0 if spd < 3.0 else 1.0
 
 	if driver_active:
-		# Right stick looks around; it springs back to the road when released.
-		var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
-		if look.length() > 0.05:
-			_look_yaw = clampf(-look.x * 1.6, -1.9, 1.9)
-			_look_pitch = clampf(-0.08 - look.y * 0.5, -0.8, 0.5)
-		elif Game.using_pad:
-			_look_yaw = move_toward(_look_yaw, 0.0, 4.0 * delta)
-			_look_pitch = move_toward(_look_pitch, -0.08, 2.0 * delta)
+		# Right stick turns your head: how far you push sets how far you look (up to about
+		# 80 degrees each way, a bit up or down), and the head eases there like a neck would.
+		# Let go and it eases back to the road.
+		var look := Game.look_stick()
+		if look != Vector2.ZERO or Game.using_pad:
+			var want_yaw := -look.x * NECK_YAW
+			var want_pitch := -0.08 - look.y * NECK_PITCH
+			var rate := (5.0 if look != Vector2.ZERO else 3.5) * Game.pad_sens
+			var k := 1.0 - exp(-rate * delta)
+			_look_yaw = lerpf(_look_yaw, want_yaw, k)
+			_look_pitch = lerpf(_look_pitch, want_pitch, k)
 	if _steering_wheel:
 		_steering_wheel.rotation.z = -steering * 4.0
 	fp_camera.rotation = Vector3(_look_pitch, PI + _look_yaw, 0)
