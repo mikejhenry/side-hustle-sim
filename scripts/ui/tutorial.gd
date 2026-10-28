@@ -7,6 +7,8 @@ extends CanvasLayer
 
 const SETTINGS_PATH := "user://settings.cfg"
 const ARRIVE := 16.0
+## Bump this when the tour changes, so players who finished an older one see it again once.
+const VERSION := 2
 
 var main: Node = null
 var active := false
@@ -23,7 +25,7 @@ var _phone_seen := false
 
 static func is_done() -> bool:
 	var cfg := ConfigFile.new()
-	return cfg.load(SETTINGS_PATH) == OK and bool(cfg.get_value("tutorial", "done", false))
+	return cfg.load(SETTINGS_PATH) == OK and int(cfg.get_value("tutorial", "version", 0)) >= VERSION
 
 
 func _ready() -> void:
@@ -102,7 +104,7 @@ func _build_steps() -> void:
 			"target": func(): return {"pos": main.car.global_position, "label": "Your car"},
 			"done": func(): return main.is_driving()},
 		_visit("Lube & Tube", "Drive to Lube & Tube",
-			func(): return "Gas %s, brake and reverse %s, handbrake %s. %s switches camera, %s toggles mirrors, %s headlights.\n\nFollow the blue GPS line. Speed limit is 30 mph in town (sign next to your speed). Police only notice you if you pass in front of or beside them, but if they light you up, pull over and stop." % [
+			func(): return "Gas %s, brake and reverse %s, handbrake %s. %s switches camera, %s toggles mirrors, %s headlights.\n\nFollow the blue GPS line. Speed limit is 30 mph in town (sign next to your speed). Police only notice you if you pass in front of or beside them, but if they light you up, pull over and stop. Watch for traffic lights: some have red light cameras, and some streets have speed cameras that mail you a ticket." % [
 				k("W", "RT"), k("S", "LT"), k("Space", "A"), k("C", "LB"), k("M", "D-pad up"), k("L", "RB")]),
 		_visit("WahWah", "Gas up at WahWah",
 			func(): return "Lube & Tube does oil changes, tires and repairs. Your oil is almost gone, so come back soon (walk inside and use the counter).\n\nNext: WahWah, for gas and snacks. Watch your fuel gauge."),
@@ -111,13 +113,13 @@ func _build_steps() -> void:
 		_visit(str(store.get("name", "")), "Groceries",
 			func(): return "Walk in and order at the counter when you're hungry.\n\nNext: %s. Instacrate shopping jobs happen at grocery stores, and you can stock your fridge at the register." % store.get("name", "the grocery store")),
 		_visit("Honest Al", "Honest Al's Used Cars",
-			func(): return "Next: Honest Al's. Rideshare apps (Yoober, Drift) need a 2011 or newer car, so save up and trade in the Rustwagon here."),
+			func(): return "Next: Honest Al's. Rideshare apps (Yoober, Drift) need a 2011 or newer car, so save up and trade in the Rustwagon here. DriveThyme next door will finance one with less cash up front, but it costs more in the end and they repossess if you miss a payment."),
 		_visit("Jungle Flex", "Jungle Flex Station",
 			func(): return "Next: the Jungle Flex station. Accept a delivery block in the app, scan packages here, then deliver the whole route."),
 		_visit("Dottie", "Home sweet home",
 			func(): return "Last stop: your rented room at Dottie's. Sleep in your bed, eat from the fridge, use the toilet. Rent, phone and insurance are due once a month (they auto-pay if you have the money; check the Bank app). Bigger places to rent have leasing desks."),
 		{"title": "Go to work",
-			"text": func(): return "Open your phone (%s), open DoorDish and tap GO ONLINE. Offers pop up as messages. Accept one, follow the GPS, and use the phone when the job asks.\n\nTip: the Me app sells a phone upgrade that shows cops on your map." % k("Tab", "Y"),
+			"text": func(): return "Open your phone (%s), open DoorDish and tap GO ONLINE. Offers pop up as messages. Accept one, follow the GPS, and use the phone when the job asks.\n\nTip: the Me app sells a phone upgrade that shows cops and traffic cameras on your map." % k("Tab", "Y"),
 			"done": func(): return Gigs.online.values().has(true)},
 		{"title": "You're ready",
 			"text": func(): return "That's the basics. %s opens the pause menu (save, controls, graphics). %s shows all controls. Good luck out there!" % [k("Esc", "Start"), k("F1", "Back")],
@@ -163,6 +165,7 @@ func finish(skipped: bool) -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
 	cfg.set_value("tutorial", "done", true)
+	cfg.set_value("tutorial", "version", VERSION)
 	cfg.save(SETTINGS_PATH)
 	if not skipped:
 		Game.notify("Tutorial complete!", "good")

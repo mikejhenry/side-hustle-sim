@@ -439,7 +439,14 @@ func _ui_tests() -> void:
 		if i >= 4 and i <= 10:
 			check(not tut.target().is_empty(), "  has a GPS target: %s" % tut.target().get("label", ""))
 	tut.finish(true)
-	check(not tut.active, "tutorial skipped")
+	check(not tut.active and Tutorial.is_done(), "tutorial skipped")
+	# Someone who finished an older version of the tour sees the new one again.
+	var cfg := ConfigFile.new()
+	cfg.load(Tutorial.SETTINGS_PATH)
+	cfg.set_value("tutorial", "version", Tutorial.VERSION - 1)
+	cfg.save(Tutorial.SETTINGS_PATH)
+	check(not Tutorial.is_done(), "updated tutorial shows again")
+	tut.finish(true)
 	await _gamepad_phone_test()
 
 
