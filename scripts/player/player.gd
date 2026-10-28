@@ -23,6 +23,7 @@ var _col: CollisionShape3D
 var _walk_t := 0.0
 var _legs: Array = []
 var _arms: Array = []
+var _human: Humanoid
 
 
 func _ready() -> void:
@@ -36,6 +37,38 @@ func _ready() -> void:
 
 	_model = Node3D.new()
 	add_child(_model)
+	_human = Humanoid.create("Casual2")
+	if _human:
+		_model.add_child(_human)
+	else:
+		_build_simple_model()
+	_bag = MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.45, 0.4, 0.35)
+	_bag.mesh = bm
+	_bag.material_override = Kit.mat(Color(0.75, 0.6, 0.4))
+	_bag.position = Vector3(0, 1.05, 0.38)
+	_bag.visible = false
+	_model.add_child(_bag)
+	_phone_mesh = Kit.box(_model, Vector3(0.08, 0.15, 0.02), Vector3(0.2, 1.2, 0.3), Color(0.05, 0.05, 0.05), false)
+	_phone_mesh.visible = false
+
+	_pivot = Node3D.new()
+	_pivot.position.y = 1.6
+	add_child(_pivot)
+	_spring = SpringArm3D.new()
+	_spring.spring_length = 3.6
+	_spring.margin = 0.2
+	_spring.add_excluded_object(get_rid())
+	_pivot.add_child(_spring)
+	camera = Camera3D.new()
+	camera.fov = 70.0
+	camera.cull_mask = 0xFFFFF & ~2
+	_spring.add_child(camera)
+
+
+## Fallback character made of capsules, used if the Quaternius model is missing.
+func _build_simple_model() -> void:
 	var skin := Kit.mat(Color(0.86, 0.66, 0.52))
 	var shirt := Kit.mat(Color(0.18, 0.42, 0.72))
 	var pants := Kit.mat(Color(0.16, 0.18, 0.24))
@@ -64,29 +97,6 @@ func _ready() -> void:
 		_capsule(shoulder, 0.065, 0.36, Vector3(0, -0.15, 0), shirt)
 		_capsule(shoulder, 0.055, 0.32, Vector3(0, -0.42, 0), skin)
 		_arms.append(shoulder)
-	_bag = MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.45, 0.4, 0.35)
-	_bag.mesh = bm
-	_bag.material_override = Kit.mat(Color(0.75, 0.6, 0.4))
-	_bag.position = Vector3(0, 1.05, 0.38)
-	_bag.visible = false
-	_model.add_child(_bag)
-	_phone_mesh = Kit.box(_model, Vector3(0.08, 0.15, 0.02), Vector3(0.2, 1.2, 0.3), Color(0.05, 0.05, 0.05), false)
-	_phone_mesh.visible = false
-
-	_pivot = Node3D.new()
-	_pivot.position.y = 1.6
-	add_child(_pivot)
-	_spring = SpringArm3D.new()
-	_spring.spring_length = 3.6
-	_spring.margin = 0.2
-	_spring.add_excluded_object(get_rid())
-	_pivot.add_child(_spring)
-	camera = Camera3D.new()
-	camera.fov = 70.0
-	camera.cull_mask = 0xFFFFF & ~2
-	_spring.add_child(camera)
 
 
 func _capsule(parent: Node3D, radius: float, height: float, pos: Vector3, m: Material, scl := Vector3.ONE) -> MeshInstance3D:
@@ -160,6 +170,9 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0, 30.0 * delta)
 		velocity.z = move_toward(velocity.z, 0, 30.0 * delta)
 		_walk_t = 0.0
+	if _human:
+		var amount := clampf(Vector2(velocity.x, velocity.z).length() / WALK_SPEED, 0.0, 1.3)
+		_human.pose(_walk_t * 0.5, amount, _bag.visible)
 	for i in _legs.size():
 		_legs[i].rotation.x = sin(_walk_t + i * PI) * 0.55
 		_arms[i].rotation.x = -sin(_walk_t + i * PI) * 0.45

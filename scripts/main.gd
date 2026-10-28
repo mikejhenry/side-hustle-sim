@@ -16,6 +16,7 @@ var beacon: Node3D
 var driving := false
 var map_waypoint: Dictionary = {}
 var gps: GPS
+var traffic: Traffic
 var _gps_timer := 0.0
 
 var _current: Interactable = null
@@ -57,6 +58,11 @@ func _ready() -> void:
 	gps = GPS.new()
 	gps.town = town
 	add_child(gps)
+	traffic = Traffic.new()
+	traffic.town = town
+	traffic.main = self
+	add_child(traffic)
+	traffic.build()
 
 	player.set_active(true)
 	Game.home_changed.connect(_on_home_changed)

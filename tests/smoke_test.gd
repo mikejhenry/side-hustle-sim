@@ -72,6 +72,36 @@ func _ready() -> void:
 	main.exit_car()
 	check(not main.is_driving(), "exited car")
 
+	print("Traffic")
+	var tr: Traffic = main.traffic
+	check(tr.cars.size() >= 10, "traffic cars: %d" % tr.cars.size())
+	var start_pos: Array = []
+	for c in tr.cars:
+		start_pos.append(c.global_position)
+	for i in 240:
+		await get_tree().physics_frame
+	var moved := 0
+	var on_road := 0
+	for i in tr.cars.size():
+		var p: Vector3 = tr.cars[i].global_position
+		if p.distance_to(start_pos[i]) > 5.0:
+			moved += 1
+		var fx := fposmod(p.x, 90.0)
+		var fz := fposmod(p.z, 90.0)
+		if minf(fx, 90.0 - fx) < 7.5 or minf(fz, 90.0 - fz) < 7.5:
+			on_road += 1
+	check(moved >= tr.cars.size() - 3, "traffic moves (%d/%d)" % [moved, tr.cars.size()])
+	check(on_road == tr.cars.size(), "traffic stays on roads (%d/%d)" % [on_road, tr.cars.size()])
+	# Park the player's car in front of a traffic car: it must stop short of it.
+	var ai: Node3D = tr.cars[0]
+	var block := ai.global_position + ai.global_basis.z * 13.0
+	main.car.teleport(Transform3D(ai.global_basis, block + Vector3(0, 0.5, 0)))
+	for i in 240:
+		await get_tree().physics_frame
+	var gap_now: float = ai.global_position.distance_to(main.car.global_position)
+	check(ai.speed < 0.5 and gap_now > 4.0, "traffic stops for your car (gap %.1f m, speed %.1f)" % [gap_now, ai.speed])
+	main.car.teleport(main.town.car_spawn)
+
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
 		main.phone.open_app(app)

@@ -83,6 +83,8 @@ scripts/data/game_data.gd All tunable data (cars, homes, apps, menus, rates)
 scripts/world/town.gd     Procedural New Castlewood County map, buildings, interiors
 scripts/world/kit.gd      Box/label/building/material helpers
 scripts/world/gps.gd      Turn-by-turn routing on the street grid
+scripts/world/traffic.gd  AI traffic on the street grid
+scripts/player/humanoid.gd  Quaternius character with a procedural walk cycle
 scripts/vehicle/car_model.gd  Car body model (shared by your car and the dealer lot)
 tools/gen_textures.py     Generates the tiling PBR textures in assets/textures
 scripts/world/interactable.gd  [E]-to-use world objects
@@ -103,6 +105,12 @@ godot --headless --path . res://tests/smoke_test.tscn
 
 Boots the game, drives the car, and completes one job in every app, plus bills, eviction, sleep,
 shops, and save/load.
+
+## Art credits
+
+All third-party art is CC0 (public domain): photo-scanned textures and street props from
+[Poly Haven](https://polyhaven.com), and characters, trees and cars by
+[Quaternius](https://quaternius.com) (`assets/quaternius`).
 
 ## Note on names
 

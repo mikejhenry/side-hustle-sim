@@ -267,7 +267,31 @@ static func multibox(parent: Node, size: Vector3, transforms: Array, color) -> M
 
 
 ## A leafy tree: textured trunk plus a few overlapping foliage blobs.
+## Quaternius tree models (CC0) and their native heights in meters; missing files are skipped.
+const TREE_MODELS := {"CommonTree_1": 0.0, "CommonTree_2": 0.0, "CommonTree_3": 0.0, "BirchTree_1": 3.57, "PineTree_1": 2.7}
+static var _tree_scenes: Array = []
+
+
+static func _tree_models() -> Array:
+	if _tree_scenes.is_empty():
+		for n in TREE_MODELS:
+			var path := "res://assets/quaternius/%s.fbx" % n
+			if ResourceLoader.exists(path):
+				_tree_scenes.append(load(path))
+	return _tree_scenes
+
+
 static func tree(parent: Node, pos: Vector3, scale := 1.0, leaf_tint := Color(0.35, 0.55, 0.25)) -> void:
+	var models := _tree_models()
+	if not models.is_empty():
+		# Pick a model from the position so the town looks the same every time.
+		var h := absi(int(pos.x * 7.0) * 31 + int(pos.z * 13.0))
+		var t: Node3D = models[h % models.size()].instantiate()
+		t.position = pos
+		t.rotation.y = float(h % 360) * PI / 180.0
+		t.scale = Vector3.ONE * scale * (2.0 + float(h % 5) * 0.15)
+		parent.add_child(t)
+		return
 	var t := Node3D.new()
 	t.position = pos
 	parent.add_child(t)
@@ -281,6 +305,13 @@ static func tree(parent: Node, pos: Vector3, scale := 1.0, leaf_tint := Color(0.
 
 
 static func bush(parent: Node, pos: Vector3, scale := 1.0) -> void:
+	if ResourceLoader.exists("res://assets/quaternius/Bush_1.fbx"):
+		var b: Node3D = load("res://assets/quaternius/Bush_1.fbx").instantiate()
+		b.position = pos
+		b.rotation.y = fposmod(pos.x * 1.7 + pos.z, TAU)
+		b.scale = Vector3.ONE * scale * 0.9
+		parent.add_child(b)
+		return
 	var s := sphere(parent, 0.7 * scale, pos + Vector3(0, 0.45 * scale, 0), surf("leaves", Color(0.3, 0.5, 0.22)))
 	s.scale = Vector3(1.3, 0.8, 1.0)
 
