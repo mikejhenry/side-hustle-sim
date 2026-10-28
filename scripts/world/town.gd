@@ -41,6 +41,7 @@ func build() -> void:
 	_blocks()
 	_streetlights()
 	_signs()
+	_street_props()
 
 
 # --- Ground, roads, sidewalks ---------------------------------------------------
@@ -48,7 +49,7 @@ func build() -> void:
 func _ground_and_roads() -> void:
 	var size := N * B
 	var center := size / 2.0
-	Kit.box(self, Vector3(1600, 1, 1600), Vector3(center, -0.5, center), Kit.surf("grass"))
+	Kit.box(self, Vector3(1600, 1, 1600), Vector3(center, -0.5, center), Kit.surf("grass", Color(0.62, 0.95, 0.42)))
 	var asphalt := Kit.surf("asphalt")
 	var length := size + RING * 2.0 + 16.0
 	for k in N + 1:
@@ -120,15 +121,34 @@ func _streetlights() -> void:
 		for kz in N + 1:
 			var p := Vector3(kx * B + ROAD_W / 2.0 + 1.0, 0, kz * B + ROAD_W / 2.0 + 1.0)
 			Kit.cylinder(self, 0.12, 6.0, p + Vector3(0, 3, 0), Color(0.25, 0.25, 0.27))
-			Kit.box(self, Vector3(1.6, 0.15, 0.4), p + Vector3(-0.7, 6.0, -0.7), Color(0.25, 0.25, 0.27), false)
+			# Scanned lamp head on top of the pole, pointing into the intersection.
+			var head := Kit.prop(self, "street_lamp_02", p + Vector3(0, 5.1, 0), -3.0 * PI / 4.0, "", 1.3)
+			head.get_child(0).position = Vector3(head.get_child(0).position.x, 0.0, 0.0)
 			var l := OmniLight3D.new()
-			l.position = p + Vector3(-1.5, 5.6, -1.5)
+			l.position = p + Vector3(-0.6, 5.8, -0.6)
 			l.omni_range = 24.0
 			l.light_energy = 1.6
 			l.light_color = Color(1.0, 0.85, 0.6)
 			l.visible = false
 			add_child(l)
 			_street_lights.append(l)
+
+
+## Scanned trash cans by shop doors and fire hydrants on some corners.
+func _street_props() -> void:
+	for place in restaurants + stores:
+		var out: Vector3 = (place.curb - place.door)
+		out.y = 0.0
+		out = out.normalized()
+		var side := out.cross(Vector3.UP)
+		var pos: Vector3 = place.door + out * 1.2 + side * 2.6
+		pos.y = 0.12
+		Kit.prop(self, "metal_trash_can", pos, atan2(out.x, out.z), "rust")
+	for kx in N + 1:
+		for kz in N + 1:
+			if (kx + kz) % 2 == 0:
+				var p := Vector3(kx * B - ROAD_W / 2.0 - 1.2, 0.12, kz * B + ROAD_W / 2.0 + 1.2)
+				Kit.prop(self, "fire_hydrant", p, PI / 4.0, "aged")
 
 
 func set_night(on: bool) -> void:

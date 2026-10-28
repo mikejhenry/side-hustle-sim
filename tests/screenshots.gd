@@ -58,6 +58,11 @@ func _ready() -> void:
 	main.player.global_position = main.town.stores[0].door + (main.town.stores[0].door - main.town.stores[0].curb).normalized() * 6.0
 	main.player.yaw = atan2(main.town.stores[0].door.x - main.town.stores[0].curb.x, main.town.stores[0].door.z - main.town.stores[0].curb.z) + PI
 	await shot("06_grocery_interior")
+	# Street corner close-up (lamp head, hydrant)
+	main.player.global_position = Vector3(2 * 90 + 6, 1, 2 * 90 + 18)
+	main.player.yaw = atan2(-14.0, -14.0) + PI
+	main.player.pitch = 0.05
+	await shot("09_street_corner")
 	Game.minute = 21 * 60.0
 	main.player.global_position = main.town.spawn_point
 	main.enter_car()

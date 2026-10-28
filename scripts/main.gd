@@ -70,6 +70,7 @@ func _build_environment() -> void:
 	env = Environment.new()
 	sky_mat = ProceduralSkyMaterial.new()
 	var sky := Sky.new()
+	_sky = sky
 	sky.sky_material = sky_mat
 	# Small, incrementally updated reflection map: the sky colors change every frame with the
 	# day/night cycle, and a big map rebuilt each frame can hang weaker GPUs.
@@ -114,12 +115,16 @@ func _build_environment() -> void:
 
 const SETTINGS_PATH := "user://settings.cfg"
 var low_graphics := false
+var _sky: Sky
 
 
 func _load_low_graphics() -> bool:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK and cfg.has_section_key("graphics", "low"):
 		return cfg.get_value("graphics", "low")
+	# The Compatibility (OpenGL) renderer is fine on Intel; only Forward+ (Vulkan) crashes.
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		return false
 	var vendor := RenderingServer.get_video_adapter_vendor().to_lower()
 	var adapter := RenderingServer.get_video_adapter_name().to_lower()
 	return "intel" in vendor or "intel" in adapter
@@ -130,6 +135,7 @@ func apply_graphics(low: bool) -> void:
 	# Low mode skips the sky shader completely (plain colored background), since the sky
 	# pass is where Intel's older Vulkan drivers lose the device.
 	env.background_mode = Environment.BG_COLOR if low else Environment.BG_SKY
+	env.sky = null if low else _sky
 	env.fog_aerial_perspective = 0.0 if low else 0.4
 	env.fog_sky_affect = 0.0 if low else 1.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED if low else Environment.REFLECTION_SOURCE_SKY

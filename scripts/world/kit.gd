@@ -7,9 +7,9 @@ static var _mats := {}
 
 ## Texture size in meters for each generated surface (see tools/gen_textures.py).
 const SURFACES := {
-	"asphalt": [5.0, 0.9], "concrete": [3.0, 0.85], "grass": [4.0, 0.95], "brick": [2.5, 0.85],
-	"siding": [2.0, 0.7], "shingles": [2.5, 0.9], "stucco": [3.0, 0.9], "tile": [2.0, 0.35],
-	"wood": [2.0, 0.6], "gravel": [3.0, 0.95], "leaves": [1.6, 0.8], "bark": [1.2, 0.95],
+	"asphalt": [3.0, 0.9], "concrete": [1.8, 0.85], "grass": [3.0, 0.95], "brick": [1.2, 0.85],
+	"siding": [2.0, 0.7], "shingles": [5.0, 0.9], "stucco": [2.0, 0.9], "tile": [2.0, 0.35],
+	"wood": [1.7, 0.6], "gravel": [2.2, 0.95], "leaves": [1.6, 0.8], "bark": [1.0, 0.95],
 }
 static var _glass: StandardMaterial3D
 
@@ -21,10 +21,10 @@ static func surf(kind: String, tint := Color.WHITE) -> StandardMaterial3D:
 		return _mats[key]
 	var spec: Array = SURFACES[kind]
 	var m := StandardMaterial3D.new()
-	m.albedo_texture = load("res://assets/textures/%s_albedo.png" % kind)
+	m.albedo_texture = _tex(kind, "albedo")
 	m.albedo_color = tint
 	m.normal_enabled = true
-	m.normal_texture = load("res://assets/textures/%s_normal.png" % kind)
+	m.normal_texture = _tex(kind, "normal")
 	m.roughness = spec[1]
 	m.uv1_triplanar = true
 	m.uv1_world_triplanar = true
@@ -32,6 +32,12 @@ static func surf(kind: String, tint := Color.WHITE) -> StandardMaterial3D:
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	_mats[key] = m
 	return m
+
+
+## Photo-scanned Poly Haven textures are .jpg; the procedurally generated ones are .png.
+static func _tex(kind: String, map: String) -> Texture2D:
+	var base := "res://assets/textures/%s_%s" % [kind, map]
+	return load(base + ".jpg") if ResourceLoader.exists(base + ".jpg") else load(base + ".png")
 
 
 static func glass() -> StandardMaterial3D:
@@ -277,3 +283,29 @@ static func tree(parent: Node, pos: Vector3, scale := 1.0, leaf_tint := Color(0.
 static func bush(parent: Node, pos: Vector3, scale := 1.0) -> void:
 	var s := sphere(parent, 0.7 * scale, pos + Vector3(0, 0.45 * scale, 0), surf("leaves", Color(0.3, 0.5, 0.22)))
 	s.scale = Vector3(1.3, 0.8, 1.0)
+
+
+## Places a Poly Haven model (assets/models/<name>/<name>.gltf). Variant meshes whose names
+## contain `drop` (for example "rust" or "aged") are removed, and the rest is centered on
+## `pos` with its base on the ground. These are real scanned props (CC0).
+static func prop(parent: Node, name: String, pos: Vector3, rot_y := 0.0, drop := "", scale := 1.0) -> Node3D:
+	var root := Node3D.new()
+	root.position = pos
+	root.rotation.y = rot_y
+	root.scale = Vector3.ONE * scale
+	parent.add_child(root)
+	var model: Node3D = load("res://assets/models/%s/%s.gltf" % [name, name]).instantiate()
+	root.add_child(model)
+	var box := AABB()
+	var first := true
+	for n in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if drop != "" and drop in String(mi.name):
+			mi.queue_free()
+			continue
+		var ab: AABB = (model.global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb() if mi.is_inside_tree() else mi.transform * mi.get_aabb()
+		box = ab if first else box.merge(ab)
+		first = false
+	var c := box.get_center()
+	model.position = Vector3(-c.x, -box.position.y, -c.z)
+	return root
