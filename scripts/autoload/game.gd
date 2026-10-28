@@ -542,6 +542,7 @@ func _setup_input() -> void:
 	_bind("load_game", [KEY_F9])
 	_bind("time_warp", [KEY_F7])
 	_bind("cheat_money", [KEY_F8])
+	_bind("graphics", [KEY_F3])
 	_bind("pause", [KEY_ESCAPE])
 
 

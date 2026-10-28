@@ -241,7 +241,7 @@ E: interact, get in or out of the car
 Tab or P: phone (gig apps, bank, garage, maps)
 C: driving camera (first person / chase)
 L: headlights        R: flip car upright
-F5: save        F9: load        F1: this help
+F5: save        F9: load        F1: this help     F3: graphics quality
 Esc: free the mouse cursor
 
 HOW TO PLAY

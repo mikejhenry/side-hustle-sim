@@ -36,6 +36,7 @@ No assets to download: the town is built in code at startup, and the surface tex
 | L | Headlights |
 | R | Flip the car upright |
 | F1 | Help |
+| F3 | Graphics quality: high / low (low is the default on Intel graphics) |
 | F5 / F9 | Save / load |
 | Esc | Free the mouse cursor |
 | F7 / F8 | Dev cheats: 10x time speed / +$500 |

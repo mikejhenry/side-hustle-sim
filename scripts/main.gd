@@ -71,6 +71,10 @@ func _build_environment() -> void:
 	sky_mat = ProceduralSkyMaterial.new()
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
+	# Small, incrementally updated reflection map: the sky colors change every frame with the
+	# day/night cycle, and a big map rebuilt each frame can hang weaker GPUs.
+	sky.radiance_size = Sky.RADIANCE_SIZE_64
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -97,8 +101,45 @@ func _build_environment() -> void:
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 160.0
 	add_child(sun)
+	apply_graphics(_load_low_graphics())
+
+
+# --- Graphics quality ----------------------------------------------------------------
+# Low graphics turns off sky reflections, ambient occlusion and glow, and uses cheaper
+# shadows. It's on by default for Intel integrated graphics, whose older Vulkan drivers
+# crash ("device lost") on the sky reflection pass. F3 toggles it and the choice is saved.
+
+const SETTINGS_PATH := "user://settings.cfg"
+var low_graphics := false
+
+
+func _load_low_graphics() -> bool:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK and cfg.has_section_key("graphics", "low"):
+		return cfg.get_value("graphics", "low")
+	var vendor := RenderingServer.get_video_adapter_vendor().to_lower()
+	var adapter := RenderingServer.get_video_adapter_name().to_lower()
+	return "intel" in vendor or "intel" in adapter
+
+
+func apply_graphics(low: bool) -> void:
+	low_graphics = low
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED if low else Environment.REFLECTION_SOURCE_SKY
+	env.ssao_enabled = not low
+	env.glow_enabled = not low
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if low else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 110.0 if low else 160.0
+	sun.shadow_blur = 1.0 if low else 1.5
+
+
+func toggle_graphics() -> void:
+	apply_graphics(not low_graphics)
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("graphics", "low", low_graphics)
+	cfg.save(SETTINGS_PATH)
+	hud.toast("Graphics: %s (F3 to change)" % ("low" if low_graphics else "high"), "info")
 
 
 # --- Queries used by other systems ------------------------------------------------
@@ -275,6 +316,8 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("time_warp"):
 		Game.time_multiplier = 10.0 if Game.time_multiplier == 1.0 else 1.0
 		hud.toast("Time speed: %dx" % Game.time_multiplier, "info")
+	elif event.is_action_pressed("graphics"):
+		toggle_graphics()
 	elif event.is_action_pressed("cheat_money"):
 		Game.earn(500.0, "Dev cheat")
 	elif event.is_action_pressed("camera_toggle") and driving:
