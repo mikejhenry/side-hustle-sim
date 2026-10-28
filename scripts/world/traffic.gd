@@ -312,6 +312,7 @@ class AICar:
 	var _bar: Array = []      # [red material, blue material]
 	var _flash: OmniLight3D
 	var _flash_t := 0.0
+	var _siren: AudioStreamPlayer3D
 
 	func setup(data: Dictionary, node: Vector2i, d: Vector2i, start_frac: float) -> void:
 		sync_to_physics = false
@@ -368,6 +369,13 @@ class AICar:
 		_flash.light_energy = 2.5
 		_flash.visible = false
 		add_child(_flash)
+		_siren = AudioStreamPlayer3D.new()
+		_siren.stream = Sfx.get_stream("siren")
+		_siren.unit_size = 18.0
+		_siren.max_distance = 300.0
+		_siren.volume_db = -6.0
+		_siren.position.y = top
+		add_child(_siren)
 		# Minimap badge (render layer 2 is only seen by the minimap camera).
 		marker = Node3D.new()
 		marker.top_level = true
@@ -409,9 +417,11 @@ class AICar:
 	func begin_chase() -> void:
 		mode = "chase"
 		_repath = 0.0
+		_siren.play()
 
 	func end_chase() -> void:
 		mode = "return"
+		_siren.stop()
 		for i in 2:
 			(_bar[i] as StandardMaterial3D).emission_energy_multiplier = 0.3
 		(marker.get_child(0) as MeshInstance3D).material_override = Kit.mat(Color(0.15, 0.35, 1.0), 2.0)

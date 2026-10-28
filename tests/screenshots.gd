@@ -80,6 +80,13 @@ func _ready() -> void:
 	main.player.yaw = atan2(-14.0, -14.0) + PI
 	main.player.pitch = 0.05
 	await shot("09_street_corner")
+	# Someone walking the sidewalk.
+	var ped: Node3D = main.pedestrians.people[0]
+	var pf: Vector3 = ped.global_basis.z
+	main.player.global_position = ped.global_position + pf * 5.0 + Vector3(0, 1, 0) + pf.cross(Vector3.UP) * 1.5
+	main.player.yaw = atan2(pf.x, pf.z)
+	main.player.pitch = -0.1
+	await shot("12_pedestrian")
 	Game.minute = 21 * 60.0
 	main.player.global_position = main.town.spawn_point
 	main.enter_car()

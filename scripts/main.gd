@@ -17,6 +17,7 @@ var driving := false
 var map_waypoint: Dictionary = {}
 var gps: GPS
 var traffic: Traffic
+var pedestrians: Pedestrians
 var pause_menu: PauseMenu
 var tutorial: Tutorial
 var auto_tutorial := true     # tests turn this off
@@ -66,12 +67,25 @@ func _ready() -> void:
 	traffic.main = self
 	add_child(traffic)
 	traffic.build()
+	pedestrians = Pedestrians.new()
+	pedestrians.town = town
+	pedestrians.main = self
+	add_child(pedestrians)
+	pedestrians.build()
 	tutorial = Tutorial.new()
 	tutorial.main = self
 	add_child(tutorial)
 	pause_menu = PauseMenu.new()
 	pause_menu.main = self
 	add_child(pause_menu)
+
+	var amb := AudioStreamPlayer.new()
+	amb.stream = Sfx.get_stream("ambience")
+	amb.volume_db = -20.0
+	add_child(amb)
+	amb.play()
+	Game.notified.connect(_notify_sound)
+	Gigs.offer_received.connect(func(_o): Sfx.play(self, "ping", -2.0))
 
 	player.set_active(true)
 	Game.home_changed.connect(_on_home_changed)
@@ -81,6 +95,13 @@ func _ready() -> void:
 	else:
 		hud.toast("Welcome to New Castlewood County! Press F1 for controls. Tab opens your phone.", "info")
 		hud.toast("Rent is due in 3 days and your Rustwagon needs an oil change. Time to hustle.", "warn")
+
+
+func _notify_sound(_text: String, kind: String) -> void:
+	match kind:
+		"money", "good": Sfx.play(self, "money", -8.0)
+		"bad": Sfx.play(self, "bad", -8.0)
+		_: Sfx.play(self, "ping", -12.0)
 
 
 func start_tutorial() -> void:

@@ -105,6 +105,7 @@ func _ready() -> void:
 	main.car.teleport(main.town.car_spawn)
 	await _police_tests(tr)
 	await _ui_tests()
+	await _pedestrian_tests()
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -287,6 +288,26 @@ func _speed_past(car, pos: Vector3, dir: Vector3, n: int) -> void:
 		await frames(1)
 
 
+func _pedestrian_tests() -> void:
+	print("Pedestrians")
+	var peds: Pedestrians = main.pedestrians
+	check(peds.people.size() == Pedestrians.COUNT, "pedestrians: %d" % peds.people.size())
+	var start: Array = peds.people.map(func(p): return p.global_position)
+	await frames(180)
+	var moved := 0
+	var on_walk := 0
+	for i in peds.people.size():
+		var p: Vector3 = peds.people[i].global_position
+		if p.distance_to(start[i]) > 1.0:
+			moved += 1
+		var fx := fposmod(p.x, 90.0)
+		var fz := fposmod(p.z, 90.0)
+		if absf(minf(fx, 90.0 - fx) - Pedestrians.INSET) < 0.6 or absf(minf(fz, 90.0 - fz) - Pedestrians.INSET) < 0.6:
+			on_walk += 1
+	check(moved >= peds.people.size() - 4, "pedestrians walk (%d/%d)" % [moved, peds.people.size()])
+	check(on_walk == peds.people.size(), "pedestrians stay on sidewalks (%d/%d)" % [on_walk, peds.people.size()])
+
+
 func _ui_tests() -> void:
 	print("Pause menu and tutorial")
 	main.pause_menu.open()
@@ -294,6 +315,11 @@ func _ui_tests() -> void:
 	main.pause_menu.close()
 	check(not get_tree().paused, "resume")
 	check(InputMap.action_get_events("interact").any(func(e): return e is InputEventJoypadButton), "gamepad bound")
+	main.pause_menu.open()
+	main.pause_menu._show_settings(true)
+	check(main.pause_menu._settings.visible, "settings panel opens")
+	main.pause_menu.close()
+	check(Sfx.get_stream("siren").get_length() > 1.0 and Sfx.get_stream("engine").loop_mode == AudioStreamWAV.LOOP_FORWARD, "sounds synthesized")
 	var tut: Tutorial = main.tutorial
 	main.start_tutorial()
 	check(tut.active and tut.step == 0, "tutorial starts")

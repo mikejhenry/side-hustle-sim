@@ -112,12 +112,18 @@ addresses (101 in total) with doorstep drop-off points.
 
 ## Roadmap
 
+**Done**
+- AI traffic, police with line-of-sight speeding detection, chases and tickets.
+- Pedestrians on sidewalks.
+- Sound: engine, horn, siren, crash, phone pings, ambience (synthesized).
+- Quaternius character, trees and cop car; Poly Haven textures and props.
+- Mirrors, turn-by-turn GPS, pause menu with settings, gamepad support, tutorial.
+
 **Next (polish the slice)**
-- AI traffic and pedestrians (simple path-following cars on the grid, crosswalks).
-- Sound: engine, horn, phone pings, ambient city.
-- Real character and car models (CC0 packs like Kenney or Quaternius) swapped in for primitives.
-- Proper doors/turn signals, parking spot detection, speeding tickets.
-- Settings menu (mouse sensitivity, time speed, graphics).
+- Pedestrians crossing at crosswalks, with cars yielding.
+- Turn signals, parking spot detection, parking tickets.
+- More Quaternius cars/characters/trees once their download hosts are reachable.
+- Real motion-capture walk clips (Mixamo) retargeted onto the character.
 
 **Then (depth)**
 - Multi-apping: accept offers from two apps at once and juggle them.

@@ -139,8 +139,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not active:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		yaw -= event.relative.x * MOUSE_SENS
-		pitch = clampf(pitch - event.relative.y * MOUSE_SENS, -1.2, 0.6)
+		yaw -= event.relative.x * MOUSE_SENS * Game.mouse_sens
+		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens, -1.2, 0.6)
 
 
 func _physics_process(delta: float) -> void:
@@ -151,8 +151,8 @@ func _physics_process(delta: float) -> void:
 	var input_dir := Vector2.ZERO
 	if not input_locked:
 		var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
-		yaw -= look.x * 2.6 * delta
-		pitch = clampf(pitch - look.y * 1.8 * delta, -1.2, 0.6)
+		yaw -= look.x * 2.6 * Game.pad_sens * delta
+		pitch = clampf(pitch - look.y * 1.8 * Game.pad_sens * delta, -1.2, 0.6)
 		input_dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		if Input.is_action_just_pressed("jump") and is_on_floor():
 			velocity.y = JUMP_VELOCITY

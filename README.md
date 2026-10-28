@@ -93,6 +93,15 @@ a bill. Get far enough away for long enough and you escape.
 **Phone upgrade.** The Me app sells the Pear uPhone 16 Pro ($350). It shows nearby police on
 your minimap (blue COP badges, flashing red when they're after you), and its battery lasts longer.
 
+**Sound.** Engine (revs through the gears), horn, police siren, crash, phone pings and a
+quiet town ambience, all synthesized in code at startup (`scripts/audio/sfx.gd`), so there are
+no audio files.
+
+**Pedestrians** walk the sidewalks around the blocks, stopping now and then and when you're in
+their way.
+
+**Settings** (pause menu): volume, mouse sensitivity, gamepad look speed. Saved between runs.
+
 All balance numbers (prices, pay, wear rates, need rates) live in `scripts/data/game_data.gd`.
 
 ## Project layout
@@ -116,7 +125,9 @@ scripts/player/player.gd  Third-person character
 scripts/vehicle/car.gd    VehicleBody3D car with first-person cockpit
 scripts/ui/hud.gd         HUD, minimap, toasts, menus
 scripts/ui/phone.gd       The phone and its apps
-scripts/ui/pause_menu.gd  Pause menu
+scripts/ui/pause_menu.gd  Pause menu and settings
+scripts/world/pedestrians.gd  People walking the sidewalks
+scripts/audio/sfx.gd      Sound effects synthesized in code
 scripts/ui/tutorial.gd    Guided first-day tutorial
 tests/                    Headless smoke test and screenshot renderer
 docs/DESIGN.md            Design doc and roadmap

@@ -33,6 +33,7 @@ var mirrors_enabled := true
 var mirror_views := {}      # "rear" / "left" / "right" -> SubViewport
 var _mirror_cams := {}      # same keys -> [Camera3D, local Transform3D]
 var _mirror_frame := 0
+var _engine: AudioStreamPlayer3D
 
 
 func _ready() -> void:
@@ -96,6 +97,12 @@ func _ready() -> void:
 		_lights.append(l)
 
 	_build_mirrors()
+	_engine = AudioStreamPlayer3D.new()
+	_engine.stream = Sfx.get_stream("engine")
+	_engine.position = Vector3(0, 0.8, 1.6)
+	_engine.unit_size = 6.0
+	_engine.volume_db = -10.0
+	add_child(_engine)
 	apply_model()
 	Game.car_changed.connect(apply_model)
 	_last_pos = global_position
@@ -153,8 +160,28 @@ func _update_mirrors() -> void:
 	mirror_views[key].render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_mirrors()
+	_update_engine_sound(delta)
+
+
+## Engine note: idles while you sit in the car, revs with speed through four fake gears.
+func _update_engine_sound(delta: float) -> void:
+	var on := driver_active and Game.fuel > 0.0
+	if on != _engine.playing:
+		if on:
+			_engine.play()
+		else:
+			_engine.stop()
+	if not on:
+		return
+	var top: float = Game.car().top_speed
+	var g := clampf(absf(linear_velocity.dot(global_basis.z)) / (top / 4.0), 0.0, 3.99)
+	var rev := g - floorf(g)
+	var throttle := maxf(Input.get_action_strength("move_forward"), Input.get_action_strength("throttle")) if not input_locked else 0.0
+	var pitch := 0.75 + 0.55 * rev + 0.12 * floorf(g) + 0.12 * throttle
+	_engine.pitch_scale = lerpf(_engine.pitch_scale, pitch, clampf(delta * 8.0, 0.0, 1.0))
+	_engine.volume_db = lerpf(_engine.volume_db, -12.0 + 6.0 * throttle + 2.0 * rev, clampf(delta * 6.0, 0.0, 1.0))
 
 
 ## Rebuilds the body meshes to match the owned car.
@@ -227,8 +254,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not driver_active:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_look_yaw = clampf(_look_yaw - event.relative.x * MOUSE_SENS, -1.9, 1.9)
-		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS, -0.8, 0.5)
+		_look_yaw = clampf(_look_yaw - event.relative.x * MOUSE_SENS * Game.mouse_sens, -1.9, 1.9)
+		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens, -0.8, 0.5)
 
 
 func _physics_process(delta: float) -> void:
@@ -268,7 +295,7 @@ func _physics_process(delta: float) -> void:
 		engine_force = ef
 		brake = br
 		if Input.is_action_just_pressed("horn"):
-			Game.notify("BEEP BEEP!", "info")
+			Sfx.play(self, "horn", -4.0)
 		if Input.is_action_just_pressed("reset_car") and spd < 4.0:
 			reset_upright()
 	else:
@@ -304,6 +331,7 @@ func _physics_process(delta: float) -> void:
 		crashed.emit(dv)
 		Gigs.on_crash(dv)
 		if driver_active:
+			Sfx.play(self, "crash", lerpf(-8.0, 0.0, clampf((dv - 7.0) / 10.0, 0.0, 1.0)))
 			Game.notify("CRUNCH! That's going to leave a mark.", "bad")
 	_prev_velocity = linear_velocity
 

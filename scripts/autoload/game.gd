@@ -52,6 +52,7 @@ func _ready() -> void:
 	# Keeps reading input while paused (gamepad detection); the clock checks for pause itself.
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_input()
+	load_options()
 	new_game()
 
 
@@ -608,6 +609,37 @@ func _bind(action: String, keys: Array, buttons: Array = [], axes: Array = []) -
 var using_pad := false
 
 
+# --- Options (saved in user://settings.cfg, separate from save games) -----------------
+
+const SETTINGS_PATH := "user://settings.cfg"
+var volume := 0.8           # master volume 0..1
+var mouse_sens := 1.0       # multiplier
+var pad_sens := 1.0         # right-stick look speed multiplier
+
+
+func load_options() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		volume = float(cfg.get_value("options", "volume", volume))
+		mouse_sens = float(cfg.get_value("options", "mouse_sens", mouse_sens))
+		pad_sens = float(cfg.get_value("options", "pad_sens", pad_sens))
+	apply_volume()
+
+
+func save_options() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("options", "volume", volume)
+	cfg.set_value("options", "mouse_sens", mouse_sens)
+	cfg.set_value("options", "pad_sens", pad_sens)
+	cfg.save(SETTINGS_PATH)
+
+
+func apply_volume() -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
+	AudioServer.set_bus_mute(0, volume <= 0.001)
+
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.5):
 		using_pad = true
@@ -623,8 +655,8 @@ func _input(event: InputEvent) -> void:
 func pad_focus(root: Node, index := 0) -> void:
 	if not using_pad or root == null:
 		return
-	var buttons := root.find_children("*", "BaseButton", true, false).filter(
-		func(b): return b.is_visible_in_tree() and not b.disabled)
+	var buttons := root.find_children("*", "Control", true, false).filter(
+		func(b): return b.is_visible_in_tree() and ((b is BaseButton and not b.disabled) or b is Slider))
 	if buttons.is_empty():
 		return
 	(buttons[clampi(index, 0, buttons.size() - 1)] as Control).grab_focus()

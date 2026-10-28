@@ -9,6 +9,7 @@ var is_open := false
 var _list: VBoxContainer
 var _menu: PanelContainer
 var _help: PanelContainer
+var _settings: PanelContainer
 
 
 func _ready() -> void:
@@ -27,6 +28,9 @@ func _ready() -> void:
 	hl.add_theme_font_size_override("font_size", 16)
 	_help.add_child(hl)
 	_help.visible = false
+	_settings = _centered_panel(dim, 460)
+	_build_settings()
+	_settings.visible = false
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	panel.add_child(v)
@@ -58,9 +62,73 @@ func _centered_panel(parent: Control, width: float) -> PanelContainer:
 
 func _show_help(on: bool) -> void:
 	_help.visible = on
+	_settings.visible = false
 	_menu.visible = not on
 	if not on:
 		Game.pad_focus.call_deferred(_list, 1)
+
+
+func _show_settings(on: bool) -> void:
+	_settings.visible = on
+	_menu.visible = not on
+	if on:
+		Game.pad_focus.call_deferred(_settings)
+	else:
+		Game.save_options()
+		Game.pad_focus.call_deferred(_list, 2)
+
+
+func _build_settings() -> void:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 12)
+	_settings.add_child(v)
+	var title := Label.new()
+	title.text = "SETTINGS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	v.add_child(title)
+	_slider(v, "Volume", 0.0, 1.0, Game.volume, func(x):
+		Game.volume = x
+		Game.apply_volume())
+	_slider(v, "Mouse sensitivity", 0.3, 2.5, Game.mouse_sens, func(x): Game.mouse_sens = x)
+	_slider(v, "Gamepad look speed", 0.3, 2.5, Game.pad_sens, func(x): Game.pad_sens = x)
+	var hint := Label.new()
+	hint.text = "Gamepad: D-pad up/down to pick, left/right to change."
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
+	v.add_child(hint)
+	var back := Button.new()
+	back.text = "Back"
+	back.add_theme_font_size_override("font_size", 20)
+	back.custom_minimum_size.y = 44
+	back.pressed.connect(func(): _show_settings(false))
+	v.add_child(back)
+
+
+func _slider(parent: Control, text: String, lo: float, hi: float, value: float, cb: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	parent.add_child(row)
+	var l := Label.new()
+	l.text = text
+	l.custom_minimum_size.x = 190
+	l.add_theme_font_size_override("font_size", 17)
+	row.add_child(l)
+	var sl := HSlider.new()
+	sl.min_value = lo
+	sl.max_value = hi
+	sl.step = 0.05
+	sl.value = value
+	sl.custom_minimum_size = Vector2(200, 28)
+	sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var pct := Label.new()
+	pct.custom_minimum_size.x = 50
+	pct.text = "%d%%" % int(value * 100)
+	sl.value_changed.connect(func(x):
+		pct.text = "%d%%" % int(x * 100)
+		cb.call(x))
+	row.add_child(sl)
+	row.add_child(pct)
 
 
 func _rebuild() -> void:
@@ -69,6 +137,7 @@ func _rebuild() -> void:
 		c.queue_free()
 	_add("Resume", close)
 	_add("Controls", func(): _show_help(true))
+	_add("Settings", func(): _show_settings(true))
 	_add("Save game", func(): Game.save_game())
 	_add("Load game", func():
 		close()
@@ -76,7 +145,7 @@ func _rebuild() -> void:
 	_add("Graphics: %s" % ("Low" if main.low_graphics else "High"), func():
 		main.toggle_graphics()
 		_rebuild()
-		Game.pad_focus.call_deferred(_list, 4))
+		Game.pad_focus.call_deferred(_list, 5))
 	if main.tutorial and main.tutorial.active:
 		_add("Skip tutorial", func():
 			main.tutorial.finish(true)
@@ -107,6 +176,8 @@ func open() -> void:
 
 
 func close() -> void:
+	if _settings.visible:
+		Game.save_options()
 	_show_help(false)
 	is_open = false
 	visible = false
@@ -120,6 +191,8 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") or event.is_action_pressed("back"):
 		if _help.visible:
 			_show_help(false)
+		elif _settings.visible:
+			_show_settings(false)
 		else:
 			close()
 		get_viewport().set_input_as_handled()
