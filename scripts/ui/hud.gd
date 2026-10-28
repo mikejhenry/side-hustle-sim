@@ -1,0 +1,406 @@
+class_name HUD
+extends CanvasLayer
+## Heads-up display: money/clock, need bars, car gauges, prompts, toasts, minimap, menus.
+
+var main: Node = null
+var menu_open := false
+var help_open := false
+
+var _money: Label
+var _clock: Label
+var _bills: Label
+var _bars := {}
+var _prompt: Label
+var _objective: Label
+var _toasts: VBoxContainer
+var _drive: PanelContainer
+var _speed: Label
+var _fuel: ProgressBar
+var _car_warn: Label
+var _menu: PanelContainer
+var _menu_title: Label
+var _menu_list: VBoxContainer
+var _fade: ColorRect
+var _fade_label: Label
+var _drowsy: ColorRect
+var _help: PanelContainer
+var _mm_cam: Camera3D
+var _mm_marker: MeshInstance3D
+
+const TOAST_COLORS := {
+	"info": Color(0.9, 0.92, 1.0), "good": Color(0.55, 1.0, 0.6), "warn": Color(1.0, 0.85, 0.35),
+	"bad": Color(1.0, 0.45, 0.4), "money": Color(0.4, 1.0, 0.5),
+}
+
+
+func _ready() -> void:
+	layer = 1
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
+
+	_drowsy = ColorRect.new()
+	_drowsy.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_drowsy.color = Color(0, 0, 0, 0)
+	_drowsy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_drowsy)
+
+	# Top-left status panel
+	var tl := _panel(root, Vector2(16, 16), Vector2(300, 0))
+	var v := VBoxContainer.new()
+	tl.add_child(v)
+	_money = _label(v, "$0", 30, Color(0.5, 1.0, 0.55))
+	_clock = _label(v, "", 20)
+	_bills = _label(v, "", 15, Color(1, 0.85, 0.5))
+	for spec in [["Hunger", Color(0.95, 0.6, 0.2)], ["Bladder", Color(0.95, 0.85, 0.2)], ["Energy", Color(0.35, 0.7, 1.0)], ["Phone", Color(0.6, 0.6, 0.65)]]:
+		var row := HBoxContainer.new()
+		v.add_child(row)
+		var l := _label(row, spec[0], 15)
+		l.custom_minimum_size.x = 70
+		var bar := ProgressBar.new()
+		bar.custom_minimum_size = Vector2(200, 16)
+		bar.show_percentage = false
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = spec[1]
+		fill.set_corner_radius_all(4)
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(0, 0, 0, 0.5)
+		bg.set_corner_radius_all(4)
+		bar.add_theme_stylebox_override("fill", fill)
+		bar.add_theme_stylebox_override("background", bg)
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(bar)
+		_bars[spec[0]] = bar
+
+	# Minimap (top-right)
+	var mm_frame := _panel(root, Vector2(0, 16), Vector2(236, 236))
+	mm_frame.anchor_left = 1.0
+	mm_frame.anchor_right = 1.0
+	mm_frame.offset_left = -252
+	mm_frame.offset_right = -16
+	var svc := SubViewportContainer.new()
+	svc.stretch = true
+	svc.custom_minimum_size = Vector2(220, 220)
+	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mm_frame.add_child(svc)
+	var sv := SubViewport.new()
+	sv.size = Vector2i(220, 220)
+	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	svc.add_child(sv)
+	_mm_cam = Camera3D.new()
+	_mm_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	_mm_cam.size = 150.0
+	_mm_cam.near = 1.0
+	_mm_cam.far = 300.0
+	_mm_cam.rotation = Vector3(-PI / 2.0, 0, 0)
+	var mm_env := Environment.new()
+	mm_env.background_mode = Environment.BG_COLOR
+	mm_env.background_color = Color(0.2, 0.3, 0.2)
+	mm_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	mm_env.ambient_light_color = Color(1, 1, 1)
+	mm_env.ambient_light_energy = 0.9
+	_mm_cam.environment = mm_env
+	sv.add_child(_mm_cam)
+	_mm_marker = MeshInstance3D.new()
+	var pm := PrismMesh.new()
+	pm.size = Vector3(6, 8, 1)
+	_mm_marker.mesh = pm
+	_mm_marker.material_override = Kit.mat(Color(1, 0.9, 0.1), 2.0)
+	_mm_marker.layers = 2
+	add_child(_mm_marker)
+
+	_objective = _label(root, "", 17, Color(1, 1, 0.75))
+	_objective.anchor_left = 1.0
+	_objective.anchor_right = 1.0
+	_objective.offset_left = -420
+	_objective.offset_right = -16
+	_objective.offset_top = 262
+	_objective.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_objective.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+	# Toasts (top center)
+	_toasts = VBoxContainer.new()
+	_toasts.anchor_left = 0.5
+	_toasts.anchor_right = 0.5
+	_toasts.offset_left = -330
+	_toasts.offset_right = 330
+	_toasts.offset_top = 16
+	_toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_toasts)
+
+	# Interaction prompt (bottom center)
+	_prompt = _label(root, "", 22, Color(1, 1, 1))
+	_prompt.anchor_left = 0.5
+	_prompt.anchor_right = 0.5
+	_prompt.anchor_top = 1.0
+	_prompt.anchor_bottom = 1.0
+	_prompt.offset_left = -400
+	_prompt.offset_right = 400
+	_prompt.offset_top = -190
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	# Driving gauges (bottom left)
+	_drive = _panel(root, Vector2(16, 0), Vector2(260, 0))
+	_drive.anchor_top = 1.0
+	_drive.anchor_bottom = 1.0
+	_drive.offset_top = -150
+	_drive.offset_bottom = -16
+	var dv := VBoxContainer.new()
+	_drive.add_child(dv)
+	_speed = _label(dv, "0 MPH", 34)
+	var frow := HBoxContainer.new()
+	dv.add_child(frow)
+	_label(frow, "Fuel", 15).custom_minimum_size.x = 50
+	_fuel = ProgressBar.new()
+	_fuel.custom_minimum_size = Vector2(180, 14)
+	_fuel.show_percentage = false
+	_fuel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	frow.add_child(_fuel)
+	_car_warn = _label(dv, "", 15, Color(1, 0.5, 0.35))
+	_drive.visible = false
+
+	# Menu popup (center)
+	_menu = PanelContainer.new()
+	_menu.set_anchors_preset(Control.PRESET_CENTER)
+	_menu.custom_minimum_size = Vector2(560, 0)
+	_menu.add_theme_stylebox_override("panel", _style(Color(0.08, 0.09, 0.12, 0.96), 12))
+	root.add_child(_menu)
+	var mv := VBoxContainer.new()
+	mv.add_theme_constant_override("separation", 8)
+	_menu.add_child(mv)
+	_menu_title = _label(mv, "", 20, Color(1, 0.95, 0.7))
+	_menu_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_menu_list = VBoxContainer.new()
+	_menu_list.add_theme_constant_override("separation", 6)
+	mv.add_child(_menu_list)
+	_menu.visible = false
+
+	# Help
+	_help = PanelContainer.new()
+	_help.set_anchors_preset(Control.PRESET_CENTER)
+	_help.add_theme_stylebox_override("panel", _style(Color(0.05, 0.06, 0.08, 0.94), 12))
+	root.add_child(_help)
+	var hl := _label(_help, HELP_TEXT, 17)
+	hl.custom_minimum_size = Vector2(640, 0)
+	hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_help.visible = false
+
+	# Fade for sleeping
+	_fade = ColorRect.new()
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.color = Color(0, 0, 0, 0)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_fade)
+	_fade_label = _label(_fade, "", 36)
+	_fade_label.set_anchors_preset(Control.PRESET_CENTER)
+	_fade_label.modulate.a = 0.0
+
+	Game.notified.connect(toast)
+	Gigs.offer_received.connect(_on_offer)
+	Game.slept.connect(_on_slept)
+
+
+const HELP_TEXT := """SIDE HUSTLE SIM: CONTROLS
+
+WASD / arrows: walk or drive        Mouse: look
+Shift: sprint        Space: jump / handbrake
+E: interact, get in or out of the car
+Tab or P: phone (gig apps, bank, garage, maps)
+C: driving camera (first person / chase)
+L: headlights        R: flip car upright
+F5: save        F9: load        F1: this help
+Esc: free the mouse cursor
+
+HOW TO PLAY
+Open your phone and go online in a gig app. Accept offers, follow the
+beacon, and use the phone when the job asks for it. Keep yourself fed,
+rested and relieved, keep gas in the tank, change your oil, and pay
+your bills every 3 days. Save up for a better car (Honest Al's) and a
+better place to live (leasing desks at Maple Court, Lakeview Towers).
+
+Rideshare apps need a 2011 or newer car. Your 1999 Rustwagon won't cut it,
+so start with DoorDish, Instacrate and Jungle Flex.
+
+Dev cheats: F7 = 10x time speed, F8 = +$500"""
+
+
+func _style(c: Color, radius := 8) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = c
+	s.set_corner_radius_all(radius)
+	s.content_margin_left = 14
+	s.content_margin_right = 14
+	s.content_margin_top = 10
+	s.content_margin_bottom = 10
+	return s
+
+
+func _panel(parent: Control, pos: Vector2, min_size: Vector2) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.position = pos
+	p.custom_minimum_size = min_size
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_theme_stylebox_override("panel", _style(Color(0, 0, 0, 0.45)))
+	parent.add_child(p)
+	return p
+
+
+func _label(parent: Node, text: String, font_size := 16, color := Color.WHITE) -> Label:
+	var l := Label.new()
+	l.text = text
+	var ls := LabelSettings.new()
+	ls.font_size = font_size
+	ls.font_color = color
+	ls.outline_size = 4
+	ls.outline_color = Color(0, 0, 0, 0.8)
+	l.label_settings = ls
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(l)
+	return l
+
+
+func _process(_delta: float) -> void:
+	_money.text = "$%s" % _fmt_money(Game.money)
+	_clock.text = "%s  Day %d   %s" % [Game.weekday(), Game.day, Game.time_string()]
+	if Game.time_multiplier > 1.0:
+		_clock.text += "  (%dx)" % Game.time_multiplier
+	var due := Game.unpaid_bills()
+	if due.is_empty():
+		_bills.text = "No bills due"
+	else:
+		var total := 0.0
+		var overdue := false
+		for b in due:
+			total += b.amount
+			overdue = overdue or b.overdue
+		var first: Dictionary = due[0]
+		var days: int = first.due_day - Game.day
+		var when := "OVERDUE" if overdue else ("due today" if days <= 0 else "due in %d day%s" % [days, "" if days == 1 else "s"])
+		_bills.text = "Bills: $%.0f %s" % [total, when]
+		_bills.label_settings.font_color = Color(1, 0.4, 0.35) if overdue else Color(1, 0.85, 0.5)
+	_bars["Hunger"].value = Game.hunger
+	_bars["Bladder"].value = Game.bladder
+	_bars["Energy"].value = Game.energy
+	_bars["Phone"].value = Game.phone_battery
+	_drowsy.color.a = clampf((18.0 - Game.energy) / 18.0, 0.0, 1.0) * 0.55
+
+	if main:
+		var driving: bool = main.is_driving()
+		_drive.visible = driving
+		if driving:
+			_speed.text = "%d MPH" % int(main.car.speed_mph())
+			_fuel.value = Game.fuel / Game.car().tank * 100.0
+			var warns := []
+			if Game.fuel <= 0.0:
+				warns.append("OUT OF GAS")
+			if Game.oil_life < 10.0:
+				warns.append("OIL CHANGE")
+			if Game.tire_tread < 15.0:
+				warns.append("BALD TIRES")
+			if Game.engine_health < 50.0:
+				warns.append("CHECK ENGINE")
+			_car_warn.text = "  ".join(warns)
+		var pos: Vector3 = main.actor_position()
+		_mm_cam.global_position = Vector3(pos.x, 150.0, pos.z)
+		_mm_marker.global_position = Vector3(pos.x, 100.0, pos.z)
+		_mm_marker.rotation = Vector3(-PI / 2.0, 0, 0)
+		_mm_marker.global_rotation.y = main.actor_heading()
+
+
+func _fmt_money(v: float) -> String:
+	var s := "%.2f" % absf(v)
+	var parts := s.split(".")
+	var whole: String = parts[0]
+	var out := ""
+	while whole.length() > 3:
+		out = "," + whole.substr(whole.length() - 3) + out
+		whole = whole.substr(0, whole.length() - 3)
+	return ("-" if v < 0 else "") + whole + out + "." + parts[1]
+
+
+func set_prompt(text: String) -> void:
+	_prompt.text = "[E]  " + text if text != "" else ""
+
+
+func set_objective(text: String) -> void:
+	_objective.text = text
+
+
+func toast(text: String, kind := "info") -> void:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", _style(Color(0, 0, 0, 0.6), 6))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := _label(p, text, 18, TOAST_COLORS.get(kind, Color.WHITE))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toasts.add_child(p)
+	while _toasts.get_child_count() > 5:
+		_toasts.get_child(0).free()
+	var tw := p.create_tween()
+	tw.tween_interval(4.5)
+	tw.tween_property(p, "modulate:a", 0.0, 0.8)
+	tw.tween_callback(p.queue_free)
+
+
+func _on_offer(o: Dictionary) -> void:
+	var a: Dictionary = GameData.APPS[o.app]
+	var text := "%s: new offer $%.2f" % [a.name, o.pay]
+	if o.kind != "flex":
+		text += "  •  %.1f mi" % o.miles
+	toast(text + "   (Tab to open phone)", "money")
+
+
+## options: [{text, cb: Callable, disabled: bool}]
+func show_menu(title: String, options: Array) -> void:
+	for c in _menu_list.get_children():
+		c.queue_free()
+	_menu_title.text = title
+	for o in options:
+		var b := Button.new()
+		b.text = o.text
+		b.focus_mode = Control.FOCUS_NONE
+		b.disabled = o.get("disabled", false)
+		b.add_theme_font_size_override("font_size", 17)
+		var cb: Callable = o.cb
+		b.pressed.connect(func():
+			close_menu()
+			cb.call())
+		_menu_list.add_child(b)
+	var close := Button.new()
+	close.text = "Close  (Esc)"
+	close.focus_mode = Control.FOCUS_NONE
+	close.pressed.connect(close_menu)
+	_menu_list.add_child(close)
+	_menu.visible = true
+	menu_open = true
+	_menu.reset_size()
+	_menu.position = (_menu.get_viewport_rect().size - _menu.size) / 2.0
+	if main:
+		main.update_mouse_mode()
+
+
+func close_menu() -> void:
+	_menu.visible = false
+	menu_open = false
+	if main:
+		main.update_mouse_mode()
+
+
+func toggle_help() -> void:
+	help_open = not help_open
+	_help.visible = help_open
+	_help.reset_size()
+	_help.position = (_help.get_viewport_rect().size - _help.size) / 2.0
+
+
+func _on_slept(hours: float) -> void:
+	_fade.color.a = 1.0
+	_fade_label.text = "Zzz... %d hours later. %s" % [int(round(hours)), Game.time_string()]
+	_fade_label.modulate.a = 1.0
+	_fade_label.reset_size()
+	_fade_label.position = (_fade.size - _fade_label.size) / 2.0
+	var tw := create_tween()
+	tw.tween_interval(1.5)
+	tw.tween_property(_fade, "color:a", 0.0, 1.2)
+	tw.parallel().tween_property(_fade_label, "modulate:a", 0.0, 1.2)

@@ -1,0 +1,285 @@
+class_name Car
+extends VehicleBody3D
+## The player's car. Forward is local +Z. First-person camera in the driver's seat
+## (C toggles a chase camera for parking). Stats come from Game.car() and wear from Game.
+
+const STEER_LIMIT := 0.55
+const BRAKE_FORCE := 28.0
+const MOUSE_SENS := 0.0025
+
+signal crashed(strength: float)
+
+var driver_active := false
+var input_locked := false
+var chase_cam := false
+var headlights_on := false
+
+var fp_camera: Camera3D
+var chase_camera: Camera3D
+var _look_yaw := 0.0
+var _look_pitch := -0.08
+var _visual: Node3D
+var _steering_wheel: Node3D
+var _wheels: Array = []
+var _lights: Array = []
+var _last_pos: Vector3
+var _prev_velocity := Vector3.ZERO
+var _crash_cooldown := 0.0
+var _flip_timer := 0.0
+
+
+func _ready() -> void:
+	mass = 1150.0
+	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	center_of_mass = Vector3(0, 0.25, 0.1)
+	contact_monitor = true
+	max_contacts_reported = 4
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(1.8, 0.8, 4.3)
+	col.shape = shape
+	col.position = Vector3(0, 0.75, 0)
+	add_child(col)
+	var cab_col := CollisionShape3D.new()
+	var cab_shape := BoxShape3D.new()
+	cab_shape.size = Vector3(1.6, 0.55, 2.2)
+	cab_col.shape = cab_shape
+	cab_col.position = Vector3(0, 1.42, -0.2)
+	add_child(cab_col)
+
+	for spec in [[0.85, 1.35, true], [-0.85, 1.35, true], [0.85, -1.35, false], [-0.85, -1.35, false]]:
+		var w := VehicleWheel3D.new()
+		w.position = Vector3(spec[0], 0.5, spec[1])
+		w.use_as_steering = spec[2]
+		w.use_as_traction = not spec[2]
+		w.wheel_radius = 0.36
+		w.wheel_rest_length = 0.22
+		w.suspension_travel = 0.25
+		w.suspension_stiffness = 40.0
+		w.damping_compression = 0.9
+		w.damping_relaxation = 1.2
+		w.wheel_roll_influence = 0.05
+		w.wheel_friction_slip = 3.0
+		add_child(w)
+		var tire := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.36
+		cm.bottom_radius = 0.36
+		cm.height = 0.25
+		cm.radial_segments = 14
+		tire.mesh = cm
+		tire.rotation.z = PI / 2.0
+		tire.material_override = Kit.mat(Color(0.08, 0.08, 0.08))
+		w.add_child(tire)
+		_wheels.append(w)
+
+	fp_camera = Camera3D.new()
+	fp_camera.position = Vector3(0.38, 1.42, 0.05)
+	fp_camera.rotation.y = PI
+	fp_camera.fov = 78.0
+	fp_camera.near = 0.05
+	fp_camera.cull_mask = 0xFFFFF & ~2
+	add_child(fp_camera)
+	chase_camera = Camera3D.new()
+	chase_camera.position = Vector3(0, 3.2, -7.5)
+	chase_camera.rotation = Vector3(-0.22, PI, 0)
+	chase_camera.cull_mask = 0xFFFFF & ~2
+	add_child(chase_camera)
+
+	for x in [0.6, -0.6]:
+		var l := SpotLight3D.new()
+		l.position = Vector3(x, 0.8, 2.2)
+		l.rotation = Vector3(-0.08, PI, 0)
+		l.spot_range = 45.0
+		l.spot_angle = 30.0
+		l.light_energy = 3.0
+		l.visible = false
+		add_child(l)
+		_lights.append(l)
+
+	apply_model()
+	Game.car_changed.connect(apply_model)
+	_last_pos = global_position
+
+
+## Rebuilds the body meshes to match the owned car.
+func apply_model() -> void:
+	if _visual:
+		_visual.queue_free()
+	var c := Game.car()
+	_visual = Node3D.new()
+	add_child(_visual)
+	var col: Color = c.color
+	var sz: Vector3 = c.size
+	var rusty: bool = Game.car_id == "rustwagon"
+	Kit.box(_visual, sz, Vector3(0, 0.75, 0), col, false)
+	# Cabin shell: thin roof + pillars so you can see out from the driver's seat.
+	Kit.box(_visual, Vector3(sz.x - 0.2, 0.06, 1.9), Vector3(0, 1.72, -0.3), col.darkened(0.15), false)
+	for x in [sz.x / 2.0 - 0.12, -sz.x / 2.0 + 0.12]:
+		for z in [0.66, -1.2]:
+			Kit.box(_visual, Vector3(0.05, 0.6, 0.05), Vector3(x, 1.43, z), col.darkened(0.15), false)
+	# Glass (only seen from outside; single-sided box faces)
+	var glass := MeshInstance3D.new()
+	var gb := BoxMesh.new()
+	gb.size = Vector3(sz.x - 0.24, 0.56, 1.8)
+	glass.mesh = gb
+	var gm := StandardMaterial3D.new()
+	gm.albedo_color = Color(0.4, 0.55, 0.65, 0.35)
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.material_override = gm
+	glass.position = Vector3(0, 1.42, -0.3)
+	_visual.add_child(glass)
+	# Lights
+	for x in [0.6, -0.6]:
+		Kit.box(_visual, Vector3(0.35, 0.15, 0.05), Vector3(x, 0.85, sz.z / 2.0 + 0.01), Color(1, 1, 0.85), false, 1.5)
+		Kit.box(_visual, Vector3(0.35, 0.15, 0.05), Vector3(x, 0.85, -sz.z / 2.0 - 0.01), Color(0.9, 0.05, 0.05), false, 1.0)
+	if rusty:
+		Kit.box(_visual, Vector3(0.6, 0.3, 0.02), Vector3(sz.x / 2.0 + 0.005, 0.7, -0.8), Color(0.45, 0.22, 0.1), false)
+		Kit.box(_visual, Vector3(0.02, 0.35, 0.9), Vector3(-sz.x / 2.0 - 0.005, 0.8, 1.0), Color(0.6, 0.6, 0.62), false)
+	# Dashboard + steering wheel (seen in first person)
+	Kit.box(_visual, Vector3(sz.x - 0.2, 0.3, 0.5), Vector3(0, 1.08, 0.85), Color(0.12, 0.12, 0.13), false)
+	_steering_wheel = Node3D.new()
+	_steering_wheel.position = Vector3(0.38, 1.18, 0.55)
+	_steering_wheel.rotation.x = -0.35
+	_visual.add_child(_steering_wheel)
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.16
+	tm.outer_radius = 0.19
+	ring.mesh = tm
+	ring.rotation.x = PI / 2.0
+	ring.material_override = Kit.mat(Color(0.05, 0.05, 0.05))
+	_steering_wheel.add_child(ring)
+	Kit.box(_steering_wheel, Vector3(0.3, 0.04, 0.03), Vector3.ZERO, Color(0.1, 0.1, 0.1), false)
+	# Seats
+	for x in [0.38, -0.38]:
+		Kit.box(_visual, Vector3(0.55, 0.15, 0.55), Vector3(x, 1.02, -0.15), Color(0.25, 0.22, 0.2), false)
+		Kit.box(_visual, Vector3(0.55, 0.65, 0.12), Vector3(x, 1.35, -0.45), Color(0.25, 0.22, 0.2), false)
+
+
+func set_driver(on: bool) -> void:
+	driver_active = on
+	_look_yaw = 0.0
+	_look_pitch = -0.08
+	if on:
+		_active_camera().current = true
+
+
+func _active_camera() -> Camera3D:
+	return chase_camera if chase_cam else fp_camera
+
+
+func toggle_camera() -> void:
+	chase_cam = not chase_cam
+	if driver_active:
+		_active_camera().current = true
+
+
+func set_headlights(on: bool) -> void:
+	headlights_on = on
+	for l in _lights:
+		l.visible = on
+
+
+func speed_mph() -> float:
+	return linear_velocity.length() * 2.237
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not driver_active:
+		return
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_look_yaw = clampf(_look_yaw - event.relative.x * MOUSE_SENS, -1.9, 1.9)
+		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS, -0.8, 0.5)
+
+
+func _physics_process(delta: float) -> void:
+	var c := Game.car()
+	var fwd_speed := linear_velocity.dot(global_basis.z)
+	var spd := linear_velocity.length()
+	for w in _wheels:
+		w.wheel_friction_slip = 3.0 * Game.grip_factor()
+
+	var hard := 0.0
+	if driver_active and not input_locked:
+		var throttle := Input.get_action_strength("move_forward")
+		var back := Input.get_action_strength("move_back")
+		var steer_in := Input.get_axis("move_right", "move_left")
+		if Game.energy < 15.0:
+			# Drowsy driving: the car wanders.
+			steer_in += sin(Time.get_ticks_msec() * 0.0011) * 0.35 * (1.0 - Game.energy / 15.0)
+		var limit := lerpf(STEER_LIMIT, 0.16, clampf(spd / 30.0, 0.0, 1.0))
+		steering = move_toward(steering, steer_in * limit, 2.2 * delta)
+		var power: float = c.engine * Game.engine_factor()
+		var ef := 0.0
+		var br := 0.0
+		if throttle > 0.0:
+			if fwd_speed < -1.0:
+				br = BRAKE_FORCE * throttle
+			else:
+				ef = power * throttle * clampf(1.0 - pow(maxf(fwd_speed, 0.0) / c.top_speed, 2.0), 0.0, 1.0)
+		if back > 0.0:
+			if fwd_speed > 1.0:
+				br = BRAKE_FORCE * back
+				hard = 0.5
+			else:
+				ef = -power * 0.6 * back * clampf(1.0 + fwd_speed / 7.0, 0.0, 1.0)
+		if Input.is_action_pressed("handbrake"):
+			br = BRAKE_FORCE * 0.9
+			hard = 1.0
+		engine_force = ef
+		brake = br
+		if Input.is_action_just_pressed("horn"):
+			Game.notify("BEEP BEEP!", "info")
+		if Input.is_action_just_pressed("reset_car") and spd < 4.0:
+			reset_upright()
+	else:
+		engine_force = 0.0
+		steering = move_toward(steering, 0.0, delta)
+		brake = 6.0 if spd < 3.0 else 1.0
+
+	if _steering_wheel:
+		_steering_wheel.rotation.z = -steering * 4.0
+	fp_camera.rotation = Vector3(_look_pitch, PI + _look_yaw, 0)
+
+	# Wear and tear
+	var moved := global_position.distance_to(_last_pos)
+	if moved < 20.0:
+		Game.add_distance(moved, hard)
+	_last_pos = global_position
+
+	# Crash detection from sudden velocity change
+	_crash_cooldown = maxf(0.0, _crash_cooldown - delta)
+	var dv := (linear_velocity - _prev_velocity).length()
+	if dv > 7.0 and _crash_cooldown <= 0.0 and _prev_velocity.length() > 6.0:
+		_crash_cooldown = 1.0
+		Game.damage_engine(dv * 0.4)
+		crashed.emit(dv)
+		Gigs.on_crash(dv)
+		if driver_active:
+			Game.notify("CRUNCH! That's going to leave a mark.", "bad")
+	_prev_velocity = linear_velocity
+
+	# Auto-right after a rollover
+	if global_basis.y.y < 0.3 and spd < 1.0:
+		_flip_timer += delta
+		if _flip_timer > 2.5:
+			reset_upright()
+	else:
+		_flip_timer = 0.0
+
+
+func reset_upright() -> void:
+	var yaw := atan2(global_basis.z.x, global_basis.z.z)
+	global_transform = Transform3D(Basis(Vector3.UP, yaw), global_position + Vector3(0, 1.2, 0))
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	_flip_timer = 0.0
+
+
+func teleport(t: Transform3D) -> void:
+	global_transform = t
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	_last_pos = t.origin
+	_prev_velocity = Vector3.ZERO

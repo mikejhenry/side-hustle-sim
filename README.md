@@ -1,0 +1,101 @@
+# Side Hustle Sim
+
+A gig-economy life sim made in Godot 4. You start in a beat-up 1999 Rustwagon, renting a room at
+Dottie's Boarding House, and grind parody gig apps to pay rent, keep your car alive, and work your
+way up to better cars and better homes.
+
+The town, **New Castlewood County**, is a stylized, compressed take on New Castle County, Delaware:
+a Wilmingtown-style downtown, a Newark-style college strip (University of Delawhere), suburbs, a
+port-side warehouse district, and the I-95 Beltway wrapping it all. Every brand is a parody.
+
+![Walking](docs/screenshots/01_walking.png)
+![Driving](docs/screenshots/02_driving_first_person.png)
+![Phone](docs/screenshots/04_phone_doordish.png)
+
+## Running it
+
+1. Install **Godot 4.3 or newer** (standard build, not .NET): https://godotengine.org/download
+2. Open Godot, click **Import**, and pick this folder's `project.godot`.
+3. Press **F5** (or the Play button).
+
+No assets to download: the whole town is built in code at startup.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| WASD / arrows | Walk or drive |
+| Mouse | Look around |
+| Shift | Sprint |
+| Space | Jump / handbrake |
+| E | Interact, get in or out of the car |
+| Tab or P | Phone |
+| C | Driving camera: first person / chase |
+| L | Headlights |
+| R | Flip the car upright |
+| F1 | Help |
+| F5 / F9 | Save / load |
+| Esc | Free the mouse cursor |
+| F7 / F8 | Dev cheats: 10x time speed / +$500 |
+
+## The gig apps
+
+| App | Parody of | How the job works |
+| --- | --- | --- |
+| **Yoober** | Uber | Drive to the pickup, tap *Start Trip* on the phone, drive to the drop-off, tap *Complete Trip*. Crashes cost stars. Needs a 2011 or newer car. |
+| **Drift** | Lyft | Same as Yoober with different peak times and pay. |
+| **DoorDish** | DoorDash | Walk into the restaurant, pick up at the *Mobile Pickup* counter, walk the order to the customer's door, take the drop-off photo in the app. |
+| **Instacrate** | Instacart | Walk the aisles grabbing items on the in-app shopping list, check out at the Instacrate register, deliver, photo. |
+| **Jungle Flex** | Amazon Flex | Reserve a block (6 AM, 10 AM, 2 PM, 6 PM), drive into the DNC9 station, scan packages in the app, deliver to a cluster of houses before the block ends. |
+
+Each app has its own peak hours (shown as a bar chart in the app). Peak hours mean more offers and
+higher pay.
+
+## Life systems
+
+- **Hunger, bladder, energy.** Eat at restaurants, WahWah, or from your fridge. Use restrooms
+  (restaurants, stores, the gas station, the park, or home). Sleep in your bed or, badly, in your car.
+  Letting them run out has consequences (accidents, passing out, drowsy driving).
+- **Bills every 3 days**: rent, phone, car insurance. Auto-pay at 9 AM. Miss rent and you get
+  evicted; miss the phone bill and your gig apps stop working.
+- **Car upkeep**: gas (WahWah), oil changes, tires, and engine repairs (Lube & Tube). Bald tires
+  mean less grip, no oil means engine damage.
+- **Upgrades**: better cars at Honest Al's Used Cars, better homes at the leasing desks of Maple
+  Court, Lakeview Towers, and the Brandywine Hills house.
+
+All balance numbers (prices, pay, wear rates, need rates) live in `scripts/data/game_data.gd`.
+
+## Project layout
+
+```
+project.godot             Godot project (autoloads: Game, Gigs)
+scenes/main.tscn          Entry scene, everything else is built in code
+scripts/main.gd           Wires world, player, car, HUD, phone; walking <-> driving
+scripts/autoload/game.gd  Clock, money, needs, bills, housing, car condition, save/load, input map
+scripts/autoload/gigs.gd  Gig apps: online state, offers, peak times, job state machine
+scripts/data/game_data.gd All tunable data (cars, homes, apps, menus, rates)
+scripts/world/town.gd     Procedural New Castlewood County map, buildings, interiors
+scripts/world/kit.gd      Box/label/building helpers
+scripts/world/interactable.gd  [E]-to-use world objects
+scripts/player/player.gd  Third-person character
+scripts/vehicle/car.gd    VehicleBody3D car with first-person cockpit
+scripts/ui/hud.gd         HUD, minimap, toasts, menus
+scripts/ui/phone.gd       The phone and its apps
+tests/                    Headless smoke test and screenshot renderer
+docs/DESIGN.md            Design doc and roadmap
+```
+
+## Tests
+
+```
+godot --headless --path . res://tests/smoke_test.tscn
+```
+
+Boots the game, drives the car, and completes one job in every app, plus bills, eviction, sleep,
+shops, and save/load.
+
+## Note on names
+
+All app, store, and car names are made-up parodies (Yoober, Drift, DoorDish, Instacrate,
+Jungle Flex, WahWah, Ackme, Hondo, Toyoyo, ...). They're meant to be recognizable jokes, not real
+brands. If you plan to sell the game, have someone check the final names.
