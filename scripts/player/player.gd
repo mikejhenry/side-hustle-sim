@@ -18,7 +18,8 @@ var camera: Camera3D
 var _pivot: Node3D
 var _spring: SpringArm3D
 var _model: Node3D
-var _bag: MeshInstance3D
+var _carry_kind := ""
+var _carry_nodes: Array = []    # one item, or one per hand for grocery bags
 var _phone_mesh: MeshInstance3D
 var _col: CollisionShape3D
 var _walk_t := 0.0
@@ -43,14 +44,6 @@ func _ready() -> void:
 		_model.add_child(_human)
 	else:
 		_build_simple_model()
-	_bag = MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.45, 0.4, 0.35)
-	_bag.mesh = bm
-	_bag.material_override = Kit.mat(Color(0.75, 0.6, 0.4))
-	_bag.position = Vector3(0, 1.05, 0.38)
-	_bag.visible = false
-	_model.add_child(_bag)
 	_phone_mesh = Kit.box(_model, Vector3(0.08, 0.15, 0.02), Vector3(0.2, 1.2, 0.3), Color(0.05, 0.05, 0.05), false)
 	_phone_mesh.visible = false
 
@@ -124,8 +117,50 @@ func set_active(on: bool) -> void:
 		velocity = Vector3.ZERO
 
 
-func set_carrying(on: bool) -> void:
-	_bag.visible = on
+## What you're carrying: "" for nothing, or a CarryItem kind (parcel, pizza, food_bag, grocery).
+func set_carrying(kind: String) -> void:
+	if kind == _carry_kind:
+		return
+	_carry_kind = kind
+	for n in _carry_nodes:
+		n.queue_free()
+	_carry_nodes.clear()
+	if kind == "":
+		return
+	for i in (2 if kind == "grocery" else 1):
+		var item := CarryItem.build(kind)
+		item.top_level = true
+		add_child(item)
+		_carry_nodes.append(item)
+
+
+func carrying() -> String:
+	return _carry_kind
+
+
+## Puts carried items in his hands (after the pose for this frame is set).
+func _place_carry() -> void:
+	if _carry_nodes.is_empty():
+		return
+	var b := _model.global_basis.orthonormalized()
+	if _human == null:
+		for n in _carry_nodes:
+			n.global_transform = Transform3D(b, _model.global_transform * Vector3(0, 1.05, 0.38))
+		return
+	var hold: String = CarryItem.HOLD.get(_carry_kind, "front")
+	if hold == "front":
+		var l := _human.palm("L")
+		var r := _human.palm("R")
+		var item: Node3D = _carry_nodes[0]
+		# Palms press on the item's sides: fit its width to the gap between them.
+		var w: float = CarryItem.WIDTH.get(_carry_kind, 0.4)
+		var sx := clampf((l.distance_to(r) - 0.03) / w, 0.75, 1.25)
+		item.global_transform = Transform3D(b.scaled(Vector3(sx, 1, 1)), (l + r) / 2.0)
+	else:
+		var sides := ["R", "L"]
+		for i in _carry_nodes.size():
+			var n: Node3D = _carry_nodes[i]
+			n.global_transform = Transform3D(b, _human.palm(sides[i]))
 
 
 func set_phone_visible(on: bool) -> void:
@@ -179,11 +214,12 @@ func _physics_process(delta: float) -> void:
 		_walk_t = 0.0
 	if _human:
 		var hspeed := Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0
-		_human.animate(delta, hspeed, _bag.visible)
+		_human.animate(delta, hspeed, CarryItem.HOLD.get(_carry_kind, "") if _carry_kind != "" else "")
 	for i in _legs.size():
 		_legs[i].rotation.x = sin(_walk_t + i * PI) * 0.55
 		_arms[i].rotation.x = -sin(_walk_t + i * PI) * 0.45
 	move_and_slide()
+	_place_carry()
 	_pivot.rotation = Vector3(pitch, yaw, 0)
 	if global_position.y < -20.0:
 		global_position.y = 2.0

@@ -136,6 +136,12 @@ func _ready() -> void:
 	check(gps.turn == "uturn", "u-turn when facing away")
 	await _use_nearest_with("Pick up DoorDish", Gigs.job.restaurant.door, 15.0)
 	check(Gigs.job.get("stage", "") == "to_customer", "picked up food")
+	await frames(3)
+	var held: String = main.player.carrying()
+	check(held in ["food_bag", "pizza"], "carrying the order (%s)" % held)
+	var held_node: Node3D = main.player._carry_nodes[0] if not main.player._carry_nodes.is_empty() else null
+	var palm: Vector3 = main.player._human.palm("R") if main.player._human else Vector3.ZERO
+	check(held_node != null and (main.player._human == null or held_node.global_position.distance_to(palm) < 0.35), "order is in his hand")
 	await _use_nearest_with("Leave", Gigs.job.customer.door, 4.0)
 	check(Gigs.job.get("stage", "") == "confirm_photo", "left at door")
 	Gigs.confirm_photo()
@@ -151,6 +157,8 @@ func _ready() -> void:
 	check(Gigs.job.get("stage", "") == "checkout", "all items grabbed")
 	await _use_nearest_with("Check out", Gigs.job.store.door, 25.0)
 	check(Gigs.job.get("stage", "") == "to_customer", "checked out")
+	await frames(3)
+	check(main.player.carrying() == "grocery", "carrying grocery bags")
 	await _use_nearest_with("Leave", Gigs.job.customer.door, 4.0)
 	Gigs.confirm_photo()
 	check(Gigs.job.is_empty(), "grocery delivered")

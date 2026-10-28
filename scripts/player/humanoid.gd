@@ -23,12 +23,15 @@ var _leg_len := 0.9         # hip to ankle, meters
 var _phase := 0.0           # walk cycle position, radians
 var _move := 0.0            # smoothed 0 (standing) .. 1 (walking) .. 1.8 (running)
 var _idle_t := 0.0
-var _carry := 0.0           # smoothed 0..1, arms held forward with a bag
+var _carry := 0.0           # smoothed 0..1, both arms forward holding a box
+var _hang := {"L": 0.0, "R": 0.0}   # smoothed 0..1, that hand holds a bag hanging at your side
 
 const BODY_BONES := ["Hips", "Abdomen", "Torso", "Chest", "Neck", "Head", "Shoulder.L", "Shoulder.R",
 	"UpperArm.L", "UpperArm.R", "LowerArm.L", "LowerArm.R", "Hand.L", "Hand.R",
 	"UpperLeg.L", "UpperLeg.R", "LowerLeg.L", "LowerLeg.R", "Foot.L", "Foot.R"]
 const WALK_SPEED := 4.2
+const RUN_CROSS := 0.22
+const CARRY_IN := 0.15
 
 
 ## Returns null if the model file is missing, so callers can fall back to simple shapes.
@@ -118,14 +121,18 @@ func _curl_fingers(grip := 0.0) -> void:
 		skeleton.set_bone_pose_rotation(f[0], (rest * Basis(Vector3.RIGHT, -amount)).get_rotation_quaternion())
 
 
-## Call every frame with your horizontal speed in m/s.
-func animate(delta: float, speed: float, carrying := false) -> void:
+## Call every frame with your horizontal speed in m/s. `carry`: "" (hands free), "front"
+## (a box held in front with both hands), "hang_r" (a bag in the right hand) or "hang_both"
+## (a bag in each hand).
+func animate(delta: float, speed: float, carry := "") -> void:
 	if skeleton == null:
 		return
 	var target := clampf(speed / WALK_SPEED, 0.0, 1.8)
 	# Blend quickly into motion and a little slower back to standing.
 	_move = move_toward(_move, target, delta * (4.0 if target > _move else 3.0))
-	_carry = move_toward(_carry, 1.0 if carrying else 0.0, delta * 4.0)
+	_carry = move_toward(_carry, 1.0 if carry == "front" else 0.0, delta * 4.0)
+	_hang.R = move_toward(_hang.R, 1.0 if carry in ["hang_r", "hang_both"] else 0.0, delta * 4.0)
+	_hang.L = move_toward(_hang.L, 1.0 if carry == "hang_both" else 0.0, delta * 4.0)
 	_idle_t += delta
 	if speed > 0.05:
 		# Cadence from stride length so feet don't slide: one cycle is two steps.
@@ -135,6 +142,19 @@ func animate(delta: float, speed: float, carrying := false) -> void:
 		# Settle the cycle toward a neutral stance while standing.
 		_phase = lerpf(_phase, roundf(_phase / PI) * PI, delta * 3.0)
 	_apply(_phase, _move, _carry, _idle_t)
+
+
+## World position of the middle of a palm ("L" or "R"), for putting things in that hand.
+func palm(side: String) -> Vector3:
+	var h: int = _bones.get("Hand." + side, -1)
+	if skeleton == null or h < 0:
+		return global_position
+	var xf := skeleton.global_transform
+	var wrist := xf * skeleton.get_bone_global_pose(h).origin
+	var mid := skeleton.find_bone("Middle1." + side)
+	if mid < 0:
+		return wrist
+	return wrist.lerp(xf * skeleton.get_bone_global_pose(mid).origin, 0.6)
 
 
 ## Stride angle of the thighs: longer strides when running.
@@ -154,7 +174,7 @@ func _apply(phase: float, m: float, carry: float, t: float) -> void:
 	var run := clampf(m - 1.0, 0.0, 0.8) / 0.8
 	var amp := _amp(m)
 	var sides := {"L": 1.0, "R": -1.0}
-	_curl_fingers(maxf(run, carry * 0.7))
+	_curl_fingers(maxf(maxf(run, carry * 0.7), maxf(_hang.L, _hang.R)))
 
 	# Idle: breathing and a slow weight shift, faded out while moving.
 	var still := 1.0 - walk
@@ -203,14 +223,22 @@ func _apply(phase: float, m: float, carry: float, t: float) -> void:
 
 		# Arms: down from the T-pose, relaxed at the sides, swinging opposite to the leg.
 		var out: float = _arm_side.get(side, s)
-		var down := _rot(Vector3.BACK, -(1.36 - 0.05 * walk) * out)
-		var arm_swing := c * (0.32 * walk + 0.1 * run)
-		var fwd := lerpf(arm_swing + breathe * 0.5, -0.75, carry)
-		var arm_b := _rot(Vector3.RIGHT, fwd) * _rot(Vector3.UP, -out * 0.1 * carry) * down
+		var hang: float = _hang[side]
+		# Holding a bag: the arm hangs a little away from the leg so the bag clears it.
+		var down := _rot(Vector3.BACK, -(1.36 - 0.05 * walk - 0.1 * hang) * out)
+		# Negative is forward. The arm swings opposite to the leg on its side; running swings
+		# further, mostly backward (elbow behind the body), with the forearm crossing in a bit.
+		var arm_swing := (c * (0.3 * walk + 0.3 * run) + 0.12 * run) * (1.0 - 0.75 * hang)
+		var fwd := lerpf(arm_swing + breathe * 0.5, -0.25, carry)
+		var arm_b := _rot(Vector3.RIGHT, fwd) * _rot(Vector3.UP, -out * (0.3 * carry + RUN_CROSS * run * (1.0 - hang))) * down
 		_set_bone("UpperArm." + side, chest * arm_b, chest)
-		var elbow := -(0.2 + 0.25 * maxf(c, 0.0) * walk + (0.8 + 0.25 * maxf(c, 0.0)) * run)
-		elbow = lerpf(elbow, -0.75, carry)
-		var fore_b := chest * _rot(Vector3.RIGHT, fwd + elbow) * down
+		# Elbow: relaxed when walking, about 90 degrees when running, bending a little more as
+		# the arm comes forward. Smooth all the way round (no kinks in the cycle).
+		var ahead := 0.5 - 0.5 * c
+		var elbow := -(0.18 + 0.22 * ahead * walk + (1.3 + 0.35 * ahead) * run)
+		elbow = lerpf(lerpf(elbow, -0.1, hang), -1.2, carry)
+		# Carrying in front: forearms angle in so the palms meet the box's sides.
+		var fore_b := chest * _rot(Vector3.UP, -out * CARRY_IN * carry) * _rot(Vector3.RIGHT, fwd + elbow) * down
 		_set_bone("LowerArm." + side, fore_b, chest * arm_b)
 		# Hands turn in toward the body.
 		var hand_b := fore_b * _rot(Vector3.UP, out * 0.35)

@@ -287,7 +287,7 @@ func _process(delta: float) -> void:
 
 	# Carrying an order?
 	var j := Gigs.job
-	player.set_carrying(not j.is_empty() and j.stage in ["to_customer", "checkout"] or j.get("stage", "") == "delivering")
+	player.set_carrying(carry_kind(j))
 	player.set_phone_visible(phone.is_open)
 
 	# GPS beacon: active job first, then map waypoint.
@@ -421,6 +421,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			exit_car()
 	elif event is InputEventMouseButton and event.pressed and not phone.is_open and not hud.menu_open and not pause_menu.is_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## What the current job has you carrying (see CarryItem), or "".
+func carry_kind(j: Dictionary) -> String:
+	if j.is_empty():
+		return ""
+	match j.get("kind", ""):
+		"food":
+			if j.stage != "to_customer":
+				return ""
+			var rname: String = j.restaurant.name
+			return "pizza" if "Pizza" in rname or "Pizzeria" in rname else "food_bag"
+		"grocery":
+			return "grocery" if j.stage in ["to_customer", "checkout"] else ""
+		"flex":
+			return "parcel" if j.stage == "delivering" else ""
+	return ""
 
 
 func update_mouse_mode() -> void:
