@@ -103,6 +103,8 @@ func _build_environment() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	add_child(sun)
 	apply_graphics(_load_low_graphics())
+	print("Graphics: %s on %s / %s" % ["low" if low_graphics else "high",
+		RenderingServer.get_video_adapter_vendor(), RenderingServer.get_video_adapter_name()])
 
 
 # --- Graphics quality ----------------------------------------------------------------
@@ -125,6 +127,11 @@ func _load_low_graphics() -> bool:
 
 func apply_graphics(low: bool) -> void:
 	low_graphics = low
+	# Low mode skips the sky shader completely (plain colored background), since the sky
+	# pass is where Intel's older Vulkan drivers lose the device.
+	env.background_mode = Environment.BG_COLOR if low else Environment.BG_SKY
+	env.fog_aerial_perspective = 0.0 if low else 0.4
+	env.fog_sky_affect = 0.0 if low else 1.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED if low else Environment.REFLECTION_SOURCE_SKY
 	env.ssao_enabled = not low
 	env.glow_enabled = not low
@@ -276,12 +283,22 @@ func _update_sky() -> void:
 		sun.rotation = Vector3(-0.9, deg_to_rad(30.0), 0)   # moonlight
 		sun.light_energy = 0.06
 		sun.light_color = Color(0.6, 0.7, 1.0)
+	env.background_color = Color(0.03, 0.03, 0.07).lerp(Color(0.55, 0.68, 0.85), day_amount)
+	if low_graphics:
+		env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
+		env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
+		_update_night()
+		return
 	sky_mat.sky_top_color = Color(0.01, 0.01, 0.04).lerp(Color(0.3, 0.5, 0.85), day_amount)
 	sky_mat.sky_horizon_color = Color(0.04, 0.04, 0.08).lerp(Color(0.75, 0.82, 0.9), day_amount)
 	sky_mat.ground_horizon_color = sky_mat.sky_horizon_color
 	sky_mat.ground_bottom_color = Color(0.05, 0.05, 0.06).lerp(Color(0.3, 0.3, 0.3), day_amount)
 	env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
 	env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
+	_update_night()
+
+
+func _update_night() -> void:
 	var night := Game.is_night()
 	if night != _was_night:
 		_was_night = night
