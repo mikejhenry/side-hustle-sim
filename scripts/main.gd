@@ -18,6 +18,7 @@ var map_waypoint: Dictionary = {}
 var gps: GPS
 var traffic: Traffic
 var traffic_control: TrafficControl
+var weather_fx: WeatherFX
 var pedestrians: Pedestrians
 var pause_menu: PauseMenu
 var tutorial: Tutorial
@@ -74,6 +75,9 @@ func _ready() -> void:
 	add_child(traffic_control)
 	traffic_control.build()
 	traffic_control.ran_red_light.connect(traffic.on_ran_red_light)
+	weather_fx = WeatherFX.new()
+	weather_fx.main = self
+	add_child(weather_fx)
 	pedestrians = Pedestrians.new()
 	pedestrians.town = town
 	pedestrians.main = self
@@ -287,7 +291,7 @@ func _process(delta: float) -> void:
 
 	# Carrying an order?
 	var j := Gigs.job
-	player.set_carrying(carry_kind(j))
+	player.set_carrying(carry_preview if carry_preview != "" else carry_kind(j))
 	player.set_phone_visible(phone.is_open)
 
 	# GPS beacon: active job first, then map waypoint.
@@ -349,6 +353,8 @@ func _update_sky() -> void:
 	if low_graphics:
 		env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
 		env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
+		if weather_fx:
+			weather_fx.apply_sky(sun, env, null)
 		_update_night()
 		return
 	sky_mat.sky_top_color = Color(0.01, 0.01, 0.04).lerp(Color(0.3, 0.5, 0.85), day_amount)
@@ -357,6 +363,8 @@ func _update_sky() -> void:
 	sky_mat.ground_bottom_color = Color(0.05, 0.05, 0.06).lerp(Color(0.3, 0.3, 0.3), day_amount)
 	env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
 	env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
+	if weather_fx:
+		weather_fx.apply_sky(sun, env, sky_mat)
 	_update_night()
 
 
@@ -403,6 +411,11 @@ func _input(event: InputEvent) -> void:
 		toggle_graphics()
 	elif event.is_action_pressed("cheat_money"):
 		Game.earn(500.0, "Dev cheat")
+	elif event.is_action_pressed("cheat_weather"):
+		var kinds := ["", "rain", "storm", "snow", "cloudy", "clear"]
+		Game.weather_override = kinds[(kinds.find(Game.weather_override) + 1) % kinds.size()]
+		Game._update_weather()
+		hud.toast("Weather: %s" % ("forecast" if Game.weather_override == "" else Game.weather_override), "info")
 	elif event.is_action_pressed("camera_toggle") and driving:
 		car.toggle_camera()
 	elif event.is_action_pressed("headlights") and driving:
@@ -421,6 +434,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			exit_car()
 	elif event is InputEventMouseButton and event.pressed and not phone.is_open and not hud.menu_open and not pause_menu.is_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Forces a carried item with no job (used by the screenshot script).
+var carry_preview := ""
 
 
 ## What the current job has you carrying (see CarryItem), or "".

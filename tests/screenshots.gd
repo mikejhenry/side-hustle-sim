@@ -118,6 +118,65 @@ func _ready() -> void:
 			main.player.pitch = -0.08
 			break
 	await shot("15_drivethyme_lot")
+	# Route 40 strip on the curved road, chase view.
+	var loop: PackedVector3Array = Roads.links(main.town.B, main.town.N)[0].pts
+	var total := Roads.length(loop)
+	var smp: Array = Roads.sample(loop, total * 0.3)
+	var lane: Vector3 = smp[0] + Traffic.right_of(smp[1]) * Traffic.LANE + Vector3(0, 0.6, 0)
+	main.enter_car()
+	main.car.teleport(Transform3D(Basis(Vector3.UP.cross(smp[1]).normalized(), Vector3.UP, smp[1]), lane))
+	main.car.toggle_camera()
+	await frames(30)
+	await shot("16_route40_strip")
+	# Rain on the strip.
+	Game.weather_override = "rain"
+	Game._update_weather()
+	await frames(60)
+	await shot("17_rain")
+	Game.weather_override = "snow"
+	Game._update_weather()
+	await frames(240)
+	await shot("18_snow")
+	Game.weather_override = ""
+	Game.minute = 7 * 60.0
+	var fog_day := 1
+	while not Game.forecast(fog_day).fog or Game.forecast(fog_day).kind in ["rain", "storm", "snow"]:
+		fog_day += 1
+	Game.day = fog_day
+	Game._update_weather()
+	await frames(30)
+	await shot("19_morning_fog")
+	Game.day = 1
+	Game.minute = 13 * 60.0
+	Game.weather_override = "clear"
+	Game._update_weather()
+	main.car.toggle_camera()
+	main.exit_car()
+	# Inside the walk-up apartments: the stairwell.
+	var w: Dictionary = main.town.walkups[0]
+	var b: Node3D = w.node
+	var fl: Array = w.flights[0]
+	var bottom: Vector3 = b.to_global(fl[0])
+	var top: Vector3 = b.to_global(fl[1])
+	var fdir := top - bottom
+	fdir.y = 0.0
+	fdir = fdir.normalized()
+	main.player.global_position = bottom - fdir * 3.0 + Vector3(0, 0.2, 0)
+	main.player.yaw = atan2(-fdir.x, -fdir.z)
+	main.player._model.rotation.y = atan2(fdir.x, fdir.z)
+	main.player.pitch = -0.15
+	await frames(20)
+	await shot("20_apartment_stairs")
+	# Carrying a pizza.
+	main.player.global_position = main.town.spawn_point
+	main.carry_preview = "pizza"
+	main.player.yaw = main.player.facing() + 0.6
+	main.player.pitch = -0.2
+	await frames(20)
+	await shot("21_carrying_pizza")
+	main.carry_preview = ""
+	main.player.set_carrying("")
+	Game.weather_override = ""
 	Game.minute = 21 * 60.0
 	main.player.global_position = main.town.spawn_point
 	main.enter_car()

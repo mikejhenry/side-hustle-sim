@@ -28,7 +28,7 @@ func _ready() -> void:
 	var town = main.town
 	print("World")
 	check(town.addresses.size() > 60, "addresses: %d" % town.addresses.size())
-	check(town.restaurants.size() == 9, "restaurants: %d" % town.restaurants.size())
+	check(town.restaurants.size() == 19, "restaurants: %d" % town.restaurants.size())
 	check(town.stores.size() == 2, "stores: %d" % town.stores.size())
 	check(not town.station.is_empty(), "flex station exists")
 	check(town.homes.size() == 4, "homes: %d" % town.homes.size())
@@ -110,6 +110,8 @@ func _ready() -> void:
 	await _ui_tests()
 	await _pedestrian_tests()
 	await _light_tests(tr)
+	await _strip_tests()
+	await _weather_tests()
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -395,6 +397,125 @@ func _speed_past(car, pos: Vector3, dir: Vector3, n: int) -> void:
 	for i in n:
 		car.linear_velocity = dir * 20.0
 		await frames(1)
+
+
+func _strip_tests() -> void:
+	print("Route 40 strip, curved road, apartments")
+	var town = main.town
+	var mcd: Dictionary = town.restaurants.filter(func(r): return r.name == "Sub Way Out")[0]
+	check(mcd.door.x > town.N * town.B + town.RING, "Sub Way Out is past the beltway")
+	var gps: GPS = main.gps
+	gps.update(Vector3(225, 0, 90), Vector3(1, 0, 0), mcd.curb, "Sub Way Out", true)
+	check("Churchmans Loop" in gps._names, "GPS routes onto the curved road (%s)" % gps.instruction)
+	var curved := 0
+	for i in range(1, gps.route.size() - 1):
+		var d1 := (gps.route[i] - gps.route[i - 1]).normalized()
+		var d2 := (gps.route[i + 1] - gps.route[i]).normalized()
+		if d1.dot(d2) < 0.9999 and d1.dot(d2) > 0.9:
+			curved += 1
+	check(curved > 5, "route follows the curve (%d bends)" % curved)
+	# An AI car put on the loop drives it and comes out at the other end.
+	var tr: Traffic = main.traffic
+	var ai: Traffic.AICar = tr.cars[2]
+	ai._legs.clear()
+	ai._node_from = Vector2i(town.N, 1)
+	ai._dir = Vector2i(1, 0)
+	ai._queue_straight()
+	ai._s = 0.0
+	ai.speed = 10.0
+	var far_x := 0.0
+	var off_road := 0.0
+	for i in 5400:
+		await get_tree().physics_frame
+		far_x = maxf(far_x, ai.global_position.x)
+		var q: Dictionary = gps._snap(ai.global_position)
+		off_road = maxf(off_road, q.point.distance_to(Vector3(ai.global_position.x, 0, ai.global_position.z)))
+		if ai._legs[0].size() <= 6 and far_x > 650.0:
+			break
+	check(far_x > 650.0, "AI car drives the loop (reached x=%.0f)" % far_x)
+	check(off_road < 6.0, "AI car stays in its lane (max %.1f m off center)" % off_road)
+	check(ai.global_position.distance_to(Vector3(town.N * town.B, 0, 3 * town.B)) < 15.0, "AI car comes back in on Pennsylvania Ave (%s)" % str(ai.global_position))
+	# Apartments: upstairs doors, elevator, stairs you can walk up.
+	var upstairs: Array = town.addresses.filter(func(a): return a.has("floor"))
+	check(upstairs.size() == 12, "upstairs apartments: %d" % upstairs.size())
+	var w: Dictionary = town.walkups[0]
+	var b: Node3D = w.node
+	var p: Player = main.player
+	var fl: Array = w.flights[0]
+	var bottom: Vector3 = b.to_global(fl[0])
+	var top: Vector3 = b.to_global(fl[1])
+	var dir := (top - bottom)
+	dir.y = 0.0
+	dir = dir.normalized()
+	p.global_position = bottom - dir * 1.5 + Vector3(0, 0.2, 0)
+	p.velocity = Vector3.ZERO
+	p.yaw = atan2(-dir.x, -dir.z)
+	await frames(5)
+	Input.action_press("move_forward")
+	for i in 240:
+		await get_tree().physics_frame
+		if p.global_position.y > top.y - 0.2:
+			break
+	Input.action_release("move_forward")
+	check(p.global_position.y > top.y - 0.4, "walked up the stairs to floor 2 (y %.1f, need %.1f)" % [p.global_position.y, top.y])
+	# Elevator from the lobby to the top floor.
+	var el = null
+	for n in get_tree().get_nodes_in_group("interactable"):
+		if b.is_ancestor_of(n) and "elevator (floor 1)" in n.get_prompt():
+			el = n
+	check(el != null, "lobby elevator")
+	var top_y: float = b.global_position.y + (w.floors - 1) * StripDistrict.FLOOR_H
+	if el:
+		el.use()
+		await frames(2)
+		var btn = null
+		for c in main.hud._menu_list.get_children():
+			if c is Button and c.text == "Floor %d" % w.floors:
+				btn = c
+		check(btn != null, "elevator offers floor %d" % w.floors)
+		if btn:
+			btn.pressed.emit()
+		await frames(30)
+	check(p.global_position.y > top_y - 0.3 and p.is_on_floor(), "elevator to the top floor (y %.1f)" % p.global_position.y)
+	p.global_position = main.town.spawn_point
+	await frames(5)
+
+
+func _weather_tests() -> void:
+	print("Weather")
+	var kinds := {}
+	var foggy := 0
+	for d in range(1, 61):
+		var f: Dictionary = Game.forecast(d)
+		kinds[f.kind] = true
+		if f.fog:
+			foggy += 1
+	check(kinds.has("rain") and kinds.has("snow") and kinds.has("clear") and foggy > 5, "60-day forecast has variety (%s, %d foggy mornings)" % [str(kinds.keys()), foggy])
+	var grip0: float = Game.grip_factor()
+	Game.weather_override = "rain"
+	Game._update_weather()
+	await frames(5)
+	check(Game.weather == "rain" and main.weather_fx._rain.emitting, "rain falls")
+	var food: float = Game.weather_boost("food")
+	var flex: float = Game.weather_boost("flex")
+	check(food > Game.weather_boost("grocery") and Game.weather_boost("grocery") > flex and flex > 1.0, "rain pay boost: food %.2fx, flex %.2fx" % [food, flex])
+	check(Game.grip_factor() < grip0, "wet roads have less grip")
+	Gigs.set_online("doordish", true)
+	Gigs._make_offer("doordish")
+	var o: Dictionary = Gigs.offers.back()
+	check(o.get("weather_pay", 0.0) > 0.0, "food offer includes a rain boost ($%.2f)" % o.get("weather_pay", 0.0))
+	Gigs.decline(o.id)
+	Gigs.set_online("doordish", false)
+	Game.weather_override = "snow"
+	Game._update_weather()
+	await frames(5)
+	check(main.weather_fx._snow.emitting and not main.weather_fx._rain.emitting and main.env.fog_enabled, "snow falls, with haze")
+	Game.weather_override = "clear"
+	Game._update_weather()
+	await frames(5)
+	check(not main.weather_fx._snow.emitting and Game.weather_boost("food") == 1.0, "clear again")
+	Game.weather_override = ""
+	Game._update_weather()
 
 
 func _pedestrian_tests() -> void:

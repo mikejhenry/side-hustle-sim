@@ -137,7 +137,7 @@ func _tick_minute() -> void:
 			if not online[id] or app(id).kind == "flex" or _has_offer(id):
 				continue
 			var rating_mult := clampf(ratings[id] - 3.9, 0.2, 1.0)
-			if randf() < GameData.BASE_OFFER_CHANCE * surge(id) * rating_mult:
+			if randf() < GameData.BASE_OFFER_CHANCE * surge(id) * Game.weather_boost(app(id).kind) * rating_mult:
 				_make_offer(id)
 				changed = true
 	if online.get("jungleflex", false) and town != null:
@@ -169,6 +169,7 @@ func _make_offer(id: String) -> void:
 	_next_id += 1
 	var me := _actor_pos()
 	var s := surge(id)
+	var wb := Game.weather_boost(a.kind)
 	match a.kind:
 		"ride":
 			var p: Dictionary = town.addresses.pick_random()
@@ -179,7 +180,8 @@ func _make_offer(id: String) -> void:
 			o.passenger = GameData.FIRST_NAMES.pick_random()
 			o.miles = trip
 			o.pickup_miles = _miles(me, p.curb)
-			o.pay = (a.base + a.per_mile * trip) * s * Game.car().comfort
+			o.pay = (a.base + a.per_mile * trip) * s * wb * Game.car().comfort
+			o.weather_pay = (a.base + a.per_mile * trip) * s * (wb - 1.0) * Game.car().comfort
 			o.tip = 0.0
 			o.deadline = now + 25.0 + (o.pickup_miles + trip) * 8.0
 		"food":
@@ -193,7 +195,8 @@ func _make_offer(id: String) -> void:
 			o.miles = miles
 			o.tip = float(randi_range(0, 7))
 			o.peak_pay = (s - 1.0) * 4.0
-			o.pay = a.base + a.per_mile * miles + o.peak_pay + o.tip
+			o.weather_pay = snappedf((a.base + a.per_mile * miles) * (wb - 1.0), 0.01)
+			o.pay = a.base + a.per_mile * miles + o.peak_pay + o.weather_pay + o.tip
 			o.deadline = now + 35.0 + miles * 9.0
 		"grocery":
 			var st: Dictionary = town.stores.pick_random()
@@ -209,7 +212,8 @@ func _make_offer(id: String) -> void:
 			o.miles = miles
 			o.tip = float(randi_range(2, 12))
 			o.peak_pay = (s - 1.0) * 5.0
-			o.pay = a.base + a.per_item * items.size() + a.per_mile * miles + o.peak_pay + o.tip
+			o.weather_pay = snappedf((a.base + a.per_item * items.size() + a.per_mile * miles) * (wb - 1.0), 0.01)
+			o.pay = a.base + a.per_item * items.size() + a.per_mile * miles + o.peak_pay + o.weather_pay + o.tip
 			o.deadline = now + 50.0 + items.size() * 6.0 + miles * 9.0
 	o.miles = snappedf(o.miles, 0.1)
 	o.pay = snappedf(o.pay, 0.01)
@@ -236,7 +240,7 @@ func _offer_flex_blocks(now: float) -> bool:
 			continue
 		if now >= start - 150.0 and now < start - 10.0:
 			_flex_blocks_seen[key] = true
-			var s := surge("jungleflex", start_h)
+			var s := surge("jungleflex", start_h) * Game.weather_boost("flex")
 			var o := {"id": _next_id, "app": "jungleflex", "kind": "flex", "expires": start - 10.0,
 				"start": start, "end": start + a.block_minutes, "packages": randi_range(4, 6),
 				"miles": 0.0, "tip": 0.0}
@@ -363,7 +367,10 @@ func status_text() -> String:
 		"to_pickup": t = "Drive to %s to pick up %s, then tap Start Trip." % [job.pickup.name, job.passenger]
 		"to_dropoff": t = "Take %s to %s, then tap Complete Trip." % [job.passenger, job.dropoff.name]
 		"to_restaurant": t = "Go inside %s and pick up order #%d at the counter." % [job.restaurant.name, job.order_no]
-		"to_customer": t = "Bring the order to %s's door at %s." % [job.customer_name, job.customer.name]
+		"to_customer":
+			t = "Bring the order to %s's door at %s." % [job.customer_name, job.customer.name]
+			if job.customer.has("floor"):
+				t += " It's on floor %d: take the stairs or the elevator." % job.customer.floor
 		"confirm_photo": t = "Open your phone and take the drop-off photo."
 		"to_store": t = "Go to %s and start shopping." % job.store.name
 		"shopping": t = "Grab items from the shelves (%d/%d). List is in the app." % [job.picked.size(), job.items.size()]

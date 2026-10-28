@@ -119,12 +119,40 @@ func node_pos(n: Vector2i) -> Vector3:
 	return Vector3(n.x * town.B, 0, n.y * town.B)
 
 
+## Curved roads (see Roads), as seen from each end:
+## {[node, exit dir]: {pts (lane-centered polyline), end (node), arrive (dir)}}
+var _links := {}
+
+
+func _build_links() -> void:
+	_links.clear()
+	for l in Roads.links(town.B, town.N):
+		for forward in [true, false]:
+			var center: PackedVector3Array = l.pts if forward else Roads.reversed(l.pts)
+			var from: Vector2i = l.from if forward else l.to
+			var to: Vector2i = l.to if forward else l.from
+			var d0 := (center[1] - center[0]).normalized()
+			var d1 := (center[center.size() - 1] - center[center.size() - 2]).normalized()
+			var exit_dir := Vector2i(roundi(d0.x), roundi(d0.z))
+			var arrive := Vector2i(roundi(d1.x), roundi(d1.z))
+			var lane := Roads.offset(center, LANE)
+			var total := Roads.length(lane)
+			_links[[from, exit_dir]] = {"pts": Roads.cut(lane, HALF, total - HALF), "end": to, "arrive": arrive}
+
+
+## The curved road leaving node `n` in direction `d`, or {}.
+func link_from(n: Vector2i, d: Vector2i) -> Dictionary:
+	if _links.is_empty():
+		_build_links()
+	return _links.get([n, d], {})
+
+
 ## Directions you can leave an intersection by, never straight back the way you came.
 func _exits(n: Vector2i, came: Vector2i) -> Array:
 	var out := []
 	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 		var m: Vector2i = n + d
-		if m.x < 0 or m.y < 0 or m.x > town.N or m.y > town.N:
+		if (m.x < 0 or m.y < 0 or m.x > town.N or m.y > town.N) and link_from(n, d).is_empty():
 			continue
 		if d == -came and came != Vector2i.ZERO:
 			continue
@@ -159,11 +187,14 @@ static func right_of(d: Vector3) -> Vector3:
 	return Vector3(-d.z, 0, d.x)
 
 
-## Speed limit in mph where you are: 30 in town, 45 on the beltway around it.
+## Speed limit in mph where you are: 45 on the beltway around town, 30 everywhere else.
 func speed_limit(p: Vector3) -> float:
 	var size: float = town.N * town.B
-	var inside := p.x > -20.0 and p.z > -20.0 and p.x < size + 20.0 and p.z < size + 20.0
-	return GameData.SPEED_LIMIT if inside else GameData.BELTWAY_LIMIT
+	var lo: float = -town.RING
+	var hi: float = size + town.RING
+	var on_ring := (absf(p.x - lo) < 10.0 or absf(p.x - hi) < 10.0) and p.z > lo - 10.0 and p.z < hi + 10.0
+	on_ring = on_ring or ((absf(p.z - lo) < 10.0 or absf(p.z - hi) < 10.0) and p.x > lo - 10.0 and p.x < hi + 10.0)
+	return GameData.BELTWAY_LIMIT if on_ring else GameData.SPEED_LIMIT
 
 
 # --- Police ----------------------------------------------------------------------------
@@ -506,7 +537,9 @@ class AICar:
 		var right := Traffic.right_of(fwd)
 		var gap := INF
 		for o in traffic.obstacles(self):
-			if o[1] and _creep > 0.0:
+			# Creeping past a standoff: ignore other AI cars (and, for a cop pulling away after a
+			# stop, your parked car too).
+			if (o[1] or mode == "return") and _creep > 0.0:
 				continue
 			var rel: Vector3 = o[0] - global_position
 			rel.y = 0.0
@@ -518,6 +551,15 @@ class AICar:
 		return target
 
 	func _queue_straight() -> void:
+		var link: Dictionary = traffic.link_from(_node_from, _dir)
+		if not link.is_empty():
+			# Curved road: follow its lane, then arrive at the far intersection as if we'd
+			# come down a grid street from the `arrive` direction.
+			var pts: PackedVector3Array = link.pts
+			_legs.append([pts[0], pts[0], pts[pts.size() - 1], Roads.length(pts), false, true, pts])
+			_dir = link.arrive
+			_node_from = link.end - _dir
+			return
 		var a := traffic.node_pos(_node_from)
 		var d3 := Vector3(_dir.x, 0, _dir.y)
 		var r := Traffic.right_of(d3)
@@ -544,6 +586,8 @@ class AICar:
 		_dir = nd
 
 	func _point(leg: Array, t: float) -> Vector3:
+		if leg.size() > 6:
+			return Roads.sample(leg[6], t * float(leg[3]))[0]
 		var p0: Vector3 = leg[0]
 		var c: Vector3 = leg[1]
 		var p1: Vector3 = leg[2]
@@ -555,7 +599,12 @@ class AICar:
 		var p := _point(leg, t)
 		var ahead := _point(leg, minf(t + 0.02, 1.0))
 		var fwd := ahead - p
-		if t >= 0.98:
+		if leg.size() > 6:
+			# Curved road: face along the lane where we are.
+			var smp: Array = Roads.sample(leg[6], _s)
+			p = smp[0]
+			fwd = smp[1]
+		elif t >= 0.98:
 			var p0: Vector3 = leg[0]
 			var p1: Vector3 = leg[2]
 			fwd = p1 - _point(leg, 0.96) if leg[4] else p1 - p0

@@ -164,6 +164,17 @@ const RESTAURANTS := {
 	"Cluckin' Good": [["3pc chicken meal", 10.25, 60.0, 0.0], ["Sweet tea", 1.99, 2.0, 6.0]],
 	"Bean Scene Coffee": [["Large drip coffee", 3.25, 0.0, 18.0], ["Breakfast sandwich", 5.75, 30.0, 4.0]],
 	"Noodle Nirvana": [["Spicy ramen", 12.00, 60.0, 0.0], ["Gyoza (6)", 6.00, 25.0, 0.0]],
+	# Route 40 strip (Churchmans Loop)
+	"McDougal's": [["Big Mick meal", 9.29, 60.0, 0.0], ["McNuggies (10)", 5.49, 35.0, 0.0]],
+	"Burger Monarch": [["Whopping meal", 9.99, 62.0, 0.0], ["Onion rings", 3.29, 15.0, 0.0]],
+	"Chick-Fil-Hey": [["Chicken sandwich meal", 10.19, 60.0, 0.0], ["Waffle fries", 3.05, 18.0, 0.0]],
+	"Wendell's": [["Baconeater combo", 10.49, 62.0, 0.0], ["Frosty-ish", 2.49, 10.0, 0.0]],
+	"Pizza Hutch": [["Personal pan pizza", 7.99, 45.0, 0.0], ["Large pepperoni", 16.99, 95.0, 0.0]],
+	"Taco Bellhop": [["Crunchwrap Supremo", 5.49, 35.0, 0.0], ["Nacho fries", 2.29, 12.0, 0.0]],
+	"Domino Effect Pizza": [["Medium two-topping", 11.99, 70.0, 0.0], ["Lava cake", 4.99, 15.0, 0.0]],
+	"Five Dudes Burgers": [["Cheeseburger + fries", 15.99, 75.0, 0.0], ["Cajun fries", 5.99, 22.0, 0.0]],
+	"Pop-Eyed Chicken": [["Spicy chicken sandwich", 5.99, 40.0, 0.0], ["3pc tenders + biscuit", 8.49, 50.0, 0.0]],
+	"Sub Way Out": [["Footlong whatever", 9.99, 55.0, 0.0], ["Cookie", 1.29, 6.0, 0.0]],
 }
 const GAS_STATION_MENU := [
 	["Gas station hot dog", 2.99, 22.0, 0.0],

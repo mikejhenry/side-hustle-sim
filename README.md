@@ -43,7 +43,7 @@ No assets to download: the town is built in code at startup, and the surface tex
 | F1 | Back | Controls |
 | F3 | | Graphics quality: high / low (low is the default on Intel graphics) |
 | F5 / F9 | | Save / load |
-| F7 / F8 | | Dev cheats: 10x time speed / +$500 |
+| F7 / F8 / F6 | | Dev cheats: 10x time speed / +$500 / cycle weather |
 
 With a gamepad, the phone and menus highlight a button: move with the D-pad or left stick,
 press A to pick, B to go back. On-screen prompts and the tutorial name whichever you used last
@@ -109,6 +109,24 @@ cameras (orange badges), warns you ("Wayz: speed camera ahead"), and its battery
 **Sound.** Engine (revs through the gears), horn, police siren, crash, phone pings and a
 quiet town ambience, all synthesized in code at startup (`scripts/audio/sfx.gd`), so there are
 no audio files.
+
+**Route 40 strip.** Past the beltway on the east side, Churchmans Loop sweeps around in a long
+curve lined with fast-food parodies (McDougal's, Burger Monarch, Chick-Fil-Hey, Wendell's, Pizza
+Hutch, Taco Bellhop, Domino Effect Pizza, Five Dudes Burgers, Pop-Eyed Chicken, Sub Way Out), a few
+shops and the Christiana Maul. The GPS routes over the curved road and AI traffic drives it.
+
+**Apartments with stairs.** Churchmans Crossing is a four-floor building you can walk into: a
+lobby, a stairwell and an elevator. Some deliveries go to upstairs doors (Apt 3B and so on), and
+the job tells you which floor.
+
+**What you carry.** Orders look like what they are and sit in his hands: a paper takeout bag in
+one hand, a pizza box or a parcel held in front with both hands, grocery bags in each hand.
+
+**Weather.** Each day has its own forecast: clear, cloudy, rain, thunderstorms or snow, and
+some mornings are foggy. Rain and snow fall around you, the sky goes grey, roads get shiny and
+slippery (snow is worst), and snow whitens the grass. Bad weather pays: food delivery offers get
+the biggest boost (+30% rain, +45% storm, +50% snow), groceries and rides a bit less, Jungle Flex
+only a few percent. The clock line on the HUD shows the current weather.
 
 **Pedestrians** walk the sidewalks around the blocks, stopping now and then and when you're in
 their way.

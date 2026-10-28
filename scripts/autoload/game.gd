@@ -149,11 +149,99 @@ func _step(m: float, is_sleeping: bool, quality: float) -> void:
 		if (day - 1) % GameData.BILL_CYCLE_DAYS == 0:
 			_generate_bills(day)
 	_update_needs(m, is_sleeping, quality)
+	_update_weather()
 	if hour() != old_hour:
 		hour_changed.emit(hour())
 		if hour() == GameData.BILL_HOUR:
 			process_bills()
 	minutes_advanced.emit(m)
+
+
+# --- Weather ----------------------------------------------------------------------
+# Each day gets its own forecast, worked out from the day number (so it never needs
+# saving): mostly clear or cloudy, with a spell of rain, a storm or snow on some days, and
+# morning fog on others. Bad weather means more and better-paid delivery offers.
+
+signal weather_changed(kind: String)
+
+const WEATHER_NAMES := {"clear": "Clear", "cloudy": "Cloudy", "rain": "Rain", "storm": "Thunderstorm", "snow": "Snow"}
+var weather := "clear"          # what's falling (or not) right now
+var weather_amount := 0.0       # 0..1, eases in and out
+var fog := 0.0                  # 0..1 morning fog
+var weather_override := ""      # tests and the dev cheat force a kind
+
+
+## Today's plan: {kind, start, end (hours), fog (bool)}.
+func forecast(for_day := -1) -> Dictionary:
+	if for_day < 0:
+		for_day = day
+	var rng := RandomNumberGenerator.new()
+	rng.seed = for_day * 7919 + 13
+	var r := rng.randf()
+	var kind := "clear"
+	if r > 0.42:
+		kind = "cloudy"
+	if r > 0.6:
+		kind = "rain"
+	if r > 0.8:
+		kind = "storm"
+	if r > 0.88:
+		kind = "snow"
+	var start := rng.randf_range(5.0, 16.0)
+	var length := rng.randf_range(3.0, 9.0)
+	return {"kind": kind, "start": start, "end": start + length, "fog": rng.randf() < 0.35}
+
+
+func _update_weather() -> void:
+	var f := forecast()
+	var h := minute / 60.0
+	var kind: String = f.kind
+	var target := 0.0
+	if kind in ["rain", "storm", "snow"]:
+		# Eases in over half an hour and out again; cloudy outside the spell.
+		target = clampf(minf(h - f.start, f.end - h) * 2.0, 0.0, 1.0)
+		if target <= 0.0:
+			kind = "cloudy"
+	elif kind == "cloudy":
+		target = 1.0
+	if weather_override != "":
+		kind = weather_override
+		target = 1.0
+	weather_amount = target
+	if kind != weather:
+		var old := weather
+		weather = kind
+		weather_changed.emit(kind)
+		if kind in ["rain", "storm", "snow"]:
+			notify("Weather: %s. Delivery pay is up %d%% while it lasts. Roads are slippery." % [
+				WEATHER_NAMES[kind].to_lower(), roundi((weather_boost("food") - 1.0) * 100.0)], "warn")
+		elif old in ["rain", "storm", "snow"]:
+			notify("The %s has stopped." % WEATHER_NAMES[old].to_lower(), "info")
+	# Morning fog, thickest around 6-8 AM.
+	fog = 0.0
+	if f.fog and weather_override == "":
+		fog = clampf(minf(h - 4.5, 9.5 - h), 0.0, 1.0)
+
+
+## Pay multiplier from the weather for an app kind: food delivery gets the most,
+## Jungle Flex barely anything.
+func weather_boost(kind: String) -> float:
+	var table := {
+		"food": {"rain": 1.3, "storm": 1.45, "snow": 1.5},
+		"grocery": {"rain": 1.2, "storm": 1.3, "snow": 1.35},
+		"ride": {"rain": 1.25, "storm": 1.35, "snow": 1.4},
+		"flex": {"rain": 1.04, "storm": 1.06, "snow": 1.08},
+	}
+	var b: float = table.get(kind, {}).get(weather, 1.0)
+	var fog_b := 1.05 if kind in ["food", "ride"] else 1.0
+	return lerpf(1.0, b, weather_amount) * lerpf(1.0, fog_b, fog)
+
+
+func weather_text() -> String:
+	var t: String = WEATHER_NAMES.get(weather, "Clear")
+	if fog > 0.3:
+		t = "Fog" if weather in ["clear", "cloudy"] else t + ", fog"
+	return t
 
 
 # --- Needs ----------------------------------------------------------------------
@@ -463,7 +551,10 @@ func engine_factor() -> float:
 
 
 func grip_factor() -> float:
-	return 0.55 + 0.45 * tire_tread / 100.0
+	var tires := 0.55 + 0.45 * tire_tread / 100.0
+	# Wet roads cost some grip, snow a lot (worse with bald tires).
+	var wet := {"rain": 0.85, "storm": 0.78, "snow": 0.6}.get(weather, 1.0) as float
+	return tires * lerpf(1.0, wet, weather_amount)
 
 
 func refuel(gallons: float) -> bool:
@@ -684,6 +775,7 @@ func _setup_input() -> void:
 	_bind("load_game", [KEY_F9])
 	_bind("time_warp", [KEY_F7])
 	_bind("cheat_money", [KEY_F8])
+	_bind("cheat_weather", [KEY_F6])
 	_bind("graphics", [KEY_F3])
 	_bind("pause", [KEY_ESCAPE], [JOY_BUTTON_START])
 

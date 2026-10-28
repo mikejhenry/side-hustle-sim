@@ -23,6 +23,7 @@ var restaurants: Array = []
 var stores: Array = []
 var station: Dictionary = {}
 var places: Array = []
+var walkups: Array = []     # buildings with stairs: {node, name, floors, flights: [[bottom, top] local]}
 var homes := {}
 var mechanic_bay: Transform3D
 var spawn_point := Vector3.ZERO
@@ -39,6 +40,7 @@ func build() -> void:
 	_rng.seed = 302   # same town every time
 	_ground_and_roads()
 	_blocks()
+	StripDistrict.new().build(self)
 	_streetlights()
 	_signs()
 	_street_props()

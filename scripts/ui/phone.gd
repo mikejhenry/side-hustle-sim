@@ -303,13 +303,16 @@ func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 	_lbl(v, "$%.2f" % o.pay, 30, Color(0.5, 1, 0.6))
 	match o.kind:
 		"ride":
-			_lbl(v, "%s • %.1f mi trip • pickup %.1f mi away" % [o.passenger, o.miles, o.pickup_miles], 14)
+			_lbl(v, "%s • %.1f mi trip • pickup %.1f mi away%s" % [o.passenger, o.miles, o.pickup_miles,
+				" • %s surge +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
 			_lbl(v, "From: %s\nTo: %s" % [o.pickup.name, o.dropoff.name], 13, Color(0.85, 0.85, 0.9))
 		"food":
-			_lbl(v, "%.1f mi total • incl. $%.0f tip%s" % [o.miles, o.tip, " • Peak Pay +$%.2f" % o.peak_pay if o.peak_pay > 0 else ""], 14)
+			_lbl(v, "%.1f mi total • incl. $%.0f tip%s%s" % [o.miles, o.tip, " • Peak Pay +$%.2f" % o.peak_pay if o.peak_pay > 0 else "",
+				" • %s boost +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
 			_lbl(v, "Pickup: %s\nDeliver: %s" % [o.restaurant.name, o.customer.name], 13, Color(0.85, 0.85, 0.9))
 		"grocery":
-			_lbl(v, "%d items • %.1f mi • incl. $%.0f tip" % [o.items.size(), o.miles, o.tip], 14)
+			_lbl(v, "%d items • %.1f mi • incl. $%.0f tip%s" % [o.items.size(), o.miles, o.tip,
+				" • %s boost +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
 			_lbl(v, "Shop: %s\nDeliver: %s" % [o.store.name, o.customer.name], 13, Color(0.85, 0.85, 0.9))
 		"flex":
 			_lbl(v, "Block %s - %s • %d packages" % [Game.abs_time_string(o.start), Game.time_string(fmod(o.end, 1440.0)), o.packages], 14)

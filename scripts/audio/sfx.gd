@@ -39,6 +39,8 @@ static func _build(sound_name: String) -> AudioStreamWAV:
 		"crash": return _wav(_crash(), false)
 		"ambience": return _wav(_ambience(), true)
 		"shutter": return _wav(_shutter(), false)
+		"rain": return _wav(_rain(), true)
+		"thunder": return _wav(_thunder(), false)
 	return _wav(PackedFloat32Array([0.0]), false)
 
 
@@ -160,6 +162,53 @@ static func _shutter() -> PackedFloat32Array:
 			if u >= 0.0:
 				s += (rng.randf_range(-1.0, 1.0) * 0.7 + sin(TAU * 2400.0 * u) * 0.3) * exp(-u * 90.0)
 		out[i] = clampf(s, -1.0, 1.0) * 0.8
+	return out
+
+
+## Steady rain: bright hiss with random droplet ticks, crossfaded so it loops smoothly.
+static func _rain() -> PackedFloat32Array:
+	var n := RATE * 3
+	var fade := int(RATE * 0.4)
+	var raw := PackedFloat32Array()
+	raw.resize(n + fade)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	var lp := 0.0
+	var prev := 0.0
+	for i in raw.size():
+		var w := rng.randf_range(-1.0, 1.0)
+		lp = lerpf(lp, w, 0.35)
+		var hiss := lp - prev * 0.6        # tilt toward the highs
+		prev = lp
+		var tick := 0.0
+		if rng.randf() < 0.002:
+			tick = rng.randf_range(0.3, 0.8)
+		raw[i] = hiss * 0.35 + tick
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		out[i] = raw[i]
+		if i < fade:
+			var k := float(i) / fade
+			out[i] = raw[i] * k + raw[n + i] * (1.0 - k)
+	return out
+
+
+## Distant thunder: a low rumble that swells and rolls away.
+static func _thunder() -> PackedFloat32Array:
+	var n := int(RATE * 3.5)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 33
+	var a := 0.0
+	var b := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		a = lerpf(a, rng.randf_range(-1.0, 1.0), 0.03)
+		b = lerpf(b, a, 0.05)
+		var env := minf(1.0, t * 3.0) * exp(-t * 1.1) * (0.8 + 0.2 * sin(t * 9.0))
+		out[i] = clampf(b * 9.0 * env, -1.0, 1.0)
 	return out
 
 

@@ -98,6 +98,8 @@ func _ready() -> void:
 	var sv := SubViewport.new()
 	sv.size = Vector2i(220, 220)
 	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# Flat colors: no sun glare off wet pavement on the map.
+	sv.debug_draw = Viewport.DEBUG_DRAW_UNSHADED
 	svc.add_child(sv)
 	_mm_cam = Camera3D.new()
 	_mm_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -105,6 +107,7 @@ func _ready() -> void:
 	_mm_cam.near = 1.0
 	_mm_cam.far = 300.0
 	_mm_cam.rotation = Vector3(-PI / 2.0, 0, 0)
+	_mm_cam.cull_mask = 0xFFFFF & ~4   # layer 3 is weather, kept off the map
 	var mm_env := Environment.new()
 	mm_env.background_mode = Environment.BG_COLOR
 	mm_env.background_color = Color(0.2, 0.3, 0.2)
@@ -345,7 +348,12 @@ better place to live (leasing desks at Maple Court, Lakeview Towers).
 Rideshare apps need a 2011 or newer car. Your 1999 Rustwagon won't cut it,
 so start with DoorDish, Instacrate and Jungle Flex.
 
-Dev cheats: F7 = 10x time speed, F8 = +$500"""
+WEATHER
+Some days bring rain, storms or snow, and some mornings are foggy. Roads get
+slippery (snow most of all), but delivery pay goes up: food apps the most,
+groceries and rides a bit less, Jungle Flex only slightly.
+
+Dev cheats: F7 = 10x time speed, F8 = +$500, F6 = cycle weather"""
 
 
 func _style(c: Color, radius := 8) -> StyleBoxFlat:
@@ -385,7 +393,7 @@ func _label(parent: Node, text: String, font_size := 16, color := Color.WHITE) -
 
 func _process(_delta: float) -> void:
 	_money.text = "$%s" % _fmt_money(Game.money)
-	_clock.text = "%s  Day %d   %s" % [Game.weekday(), Game.day, Game.time_string()]
+	_clock.text = "%s  Day %d   %s   %s" % [Game.weekday(), Game.day, Game.time_string(), Game.weather_text()]
 	if Game.time_multiplier > 1.0:
 		_clock.text += "  (%dx)" % Game.time_multiplier
 	var due := Game.unpaid_bills()
