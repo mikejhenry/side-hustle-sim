@@ -83,7 +83,7 @@ func _ground_and_roads() -> void:
 
 
 ## Double yellow center lines, white edge lines and zebra crosswalks (multimeshes).
-func _road_markings(length: float) -> void:
+func _road_markings(_length: float) -> void:
 	var yellow := []
 	var white := []
 	var zebra := []
@@ -578,7 +578,6 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 
 
 func _gas_station(lot: Node3D) -> void:
-	var sname := "WahWah"
 	# Canopy and pumps
 	Kit.box(lot, Vector3(18, 0.5, 11), Vector3(0, 5.2, -9), Color(0.95, 0.85, 0.2), false)
 	Kit.label(lot, "WahWah", Vector3(0, 5.2, -3.4), 120, Color(0.75, 0.1, 0.1))

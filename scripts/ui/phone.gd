@@ -281,7 +281,7 @@ func _demand_chart(parent: Node, id: String) -> void:
 		_live.append({"node": bar, "fn": fn})
 
 
-func _offer_card(o: Dictionary, a: Dictionary) -> void:
+func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 	var v := _card(Color(0.12, 0.18, 0.14))
 	_lbl(v, "$%.2f" % o.pay, 30, Color(0.5, 1, 0.6))
 	match o.kind:
@@ -306,7 +306,7 @@ func _offer_card(o: Dictionary, a: Dictionary) -> void:
 	_btn(row, "Decline", func(): Gigs.decline(o.id), Color(0.35, 0.2, 0.2))
 
 
-func _job_card(id: String) -> void:
+func _job_card(_id: String) -> void:
 	var j := Gigs.job
 	var v := _card(Color(0.12, 0.15, 0.22))
 	_lbl(v, "ACTIVE JOB  •  $%.2f" % j.pay, 18, Color(0.6, 0.85, 1))

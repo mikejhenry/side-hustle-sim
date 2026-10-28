@@ -132,8 +132,8 @@ func _draw_route() -> void:
 		var mid := (a + b) / 2.0 + Vector3(0, LINE_Y, 0)
 		var dir := Vector3(b.x - a.x, 0, b.z - a.z).normalized()
 		var side := Vector3.UP.cross(dir)
-		var basis := Basis(side * 5.0, Vector3.UP, dir * (seg_len + 5.0))
-		xforms.append(Transform3D(basis, mid))
+		var b3 := Basis(side * 5.0, Vector3.UP, dir * (seg_len + 5.0))
+		xforms.append(Transform3D(b3, mid))
 	if _line == null:
 		_line = Kit.multibox(self, Vector3(1, 0.5, 1), [], _mat)
 		_line.layers = 2
