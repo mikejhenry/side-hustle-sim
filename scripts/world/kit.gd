@@ -5,6 +5,51 @@ extends RefCounted
 static var _mats := {}
 
 
+## Texture size in meters for each generated surface (see tools/gen_textures.py).
+const SURFACES := {
+	"asphalt": [5.0, 0.9], "concrete": [3.0, 0.85], "grass": [4.0, 0.95], "brick": [2.5, 0.85],
+	"siding": [2.0, 0.7], "shingles": [2.5, 0.9], "stucco": [3.0, 0.9], "tile": [2.0, 0.35],
+	"wood": [2.0, 0.6], "gravel": [3.0, 0.95], "leaves": [1.6, 0.8], "bark": [1.2, 0.95],
+}
+static var _glass: StandardMaterial3D
+
+
+## Textured PBR material, mapped in world space so any box size tiles correctly.
+static func surf(kind: String, tint := Color.WHITE) -> StandardMaterial3D:
+	var key := "surf|%s|%s" % [kind, tint.to_html()]
+	if _mats.has(key):
+		return _mats[key]
+	var spec: Array = SURFACES[kind]
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = load("res://assets/textures/%s_albedo.png" % kind)
+	m.albedo_color = tint
+	m.normal_enabled = true
+	m.normal_texture = load("res://assets/textures/%s_normal.png" % kind)
+	m.roughness = spec[1]
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE / float(spec[0])
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	_mats[key] = m
+	return m
+
+
+static func glass() -> StandardMaterial3D:
+	if _glass == null:
+		_glass = StandardMaterial3D.new()
+		_glass.albedo_color = Color(0.12, 0.17, 0.22)
+		_glass.metallic = 0.6
+		_glass.roughness = 0.08
+		_glass.metallic_specular = 0.9
+	return _glass
+
+
+static func _resolve(c, emission := 0.0) -> Material:
+	if c is Material:
+		return c
+	return mat(c, emission)
+
+
 static func mat(c: Color, emission := 0.0) -> StandardMaterial3D:
 	var key := "%s|%s" % [c.to_html(), emission]
 	if _mats.has(key):
@@ -23,12 +68,12 @@ static func mat(c: Color, emission := 0.0) -> StandardMaterial3D:
 
 
 ## Adds a box. With collide=true it is a StaticBody3D you can bump into.
-static func box(parent: Node, size: Vector3, pos: Vector3, color: Color, collide := true, emission := 0.0) -> Node3D:
+static func box(parent: Node, size: Vector3, pos: Vector3, color, collide := true, emission := 0.0) -> Node3D:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
-	mi.material_override = mat(color, emission)
+	mi.material_override = _resolve(color, emission)
 	if not collide:
 		mi.position = pos
 		parent.add_child(mi)
@@ -45,7 +90,7 @@ static func box(parent: Node, size: Vector3, pos: Vector3, color: Color, collide
 	return body
 
 
-static func cylinder(parent: Node, radius: float, height: float, pos: Vector3, color: Color, collide := true) -> Node3D:
+static func cylinder(parent: Node, radius: float, height: float, pos: Vector3, color, collide := true) -> Node3D:
 	var mi := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
 	cm.top_radius = radius
@@ -53,7 +98,7 @@ static func cylinder(parent: Node, radius: float, height: float, pos: Vector3, c
 	cm.height = height
 	cm.radial_segments = 10
 	mi.mesh = cm
-	mi.material_override = mat(color)
+	mi.material_override = _resolve(color)
 	if not collide:
 		mi.position = pos
 		parent.add_child(mi)
@@ -71,7 +116,7 @@ static func cylinder(parent: Node, radius: float, height: float, pos: Vector3, c
 	return body
 
 
-static func sphere(parent: Node, radius: float, pos: Vector3, color: Color) -> MeshInstance3D:
+static func sphere(parent: Node, radius: float, pos: Vector3, color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = radius
@@ -79,7 +124,7 @@ static func sphere(parent: Node, radius: float, pos: Vector3, color: Color) -> M
 	sm.radial_segments = 10
 	sm.rings = 6
 	mi.mesh = sm
-	mi.material_override = mat(color)
+	mi.material_override = _resolve(color)
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
@@ -111,8 +156,8 @@ static func interactable(parent: Node, pos: Vector3, radius: float, prompt: Call
 
 
 ## Hollow building, origin at ground center, front (with a door gap) facing local +Z.
-static func hollow_building(parent: Node, size: Vector3, wall: Color, roof: Color,
-		door_w := 2.6, door_h := 3.0, floor_color := Color(0.62, 0.56, 0.48), windows := true) -> Node3D:
+static func hollow_building(parent: Node, size: Vector3, wall, roof,
+		door_w := 2.6, door_h := 3.0, floor_color = null, windows := true) -> Node3D:
 	var b := Node3D.new()
 	parent.add_child(b)
 	var w := size.x
@@ -128,12 +173,20 @@ static func hollow_building(parent: Node, size: Vector3, wall: Color, roof: Colo
 	if h > door_h:
 		box(b, Vector3(door_w, h - door_h, t), Vector3(0, door_h + (h - door_h) / 2, d / 2 - t / 2), wall)
 	box(b, Vector3(w + 0.4, 0.3, d + 0.4), Vector3(0, h + 0.15, 0), roof)
-	box(b, Vector3(w - 2 * t, 0.04, d - 2 * t), Vector3(0, 0.02, 0), floor_color, false)
+	box(b, Vector3(w - 2 * t, 0.04, d - 2 * t), Vector3(0, 0.02, 0), floor_color if floor_color != null else surf("tile", Color(0.9, 0.88, 0.84)), false)
 	if windows and side_w > 3.0:
-		var glass := Color(0.35, 0.55, 0.7)
 		var ww := side_w - 1.6
+		var wh := minf(2.2, h - 1.6)
 		for sx in [-1.0, 1.0]:
-			box(b, Vector3(ww, minf(2.2, h - 1.6), 0.06), Vector3(sx * (door_w / 2 + side_w / 2), 1.0 + minf(2.2, h - 1.6) / 2, d / 2 + 0.03), glass, false)
+			var cx: float = sx * (door_w / 2 + side_w / 2)
+			box(b, Vector3(ww, wh, 0.06), Vector3(cx, 1.0 + wh / 2, d / 2 + 0.03), glass(), false)
+			box(b, Vector3(ww + 0.2, 0.12, 0.14), Vector3(cx, 1.0 + wh + 0.06, d / 2 + 0.06), Color(0.15, 0.15, 0.16), false)
+			box(b, Vector3(ww + 0.3, 0.1, 0.25), Vector3(cx, 0.95, d / 2 + 0.1), Color(0.15, 0.15, 0.16), false)
+		# door frame
+		box(b, Vector3(0.15, door_h, 0.2), Vector3(-door_w / 2 - 0.07, door_h / 2, d / 2 + 0.02), Color(0.15, 0.15, 0.16), false)
+		box(b, Vector3(0.15, door_h, 0.2), Vector3(door_w / 2 + 0.07, door_h / 2, d / 2 + 0.02), Color(0.15, 0.15, 0.16), false)
+	# cornice trim
+	box(b, Vector3(w + 0.3, 0.3, 0.3), Vector3(0, h - 0.15, d / 2 + 0.05), Color(0.85, 0.83, 0.78), false)
 	# Ceiling lights on a grid with short range so they don't spill outside through the walls.
 	var nx := maxi(1, int(round(w / 10.0)))
 	var nz := maxi(1, int(round(d / 10.0)))
@@ -188,3 +241,39 @@ static func beacon(color: Color) -> Node3D:
 	dot.layers = 2   # minimap only
 	root.add_child(dot)
 	return root
+
+
+## Many identical boxes in one draw call (lane dashes, window panes, crosswalks).
+static func multibox(parent: Node, size: Vector3, transforms: Array, color) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var bm := BoxMesh.new()
+	bm.size = size
+	mm.mesh = bm
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = _resolve(color)
+	parent.add_child(mmi)
+	return mmi
+
+
+## A leafy tree: textured trunk plus a few overlapping foliage blobs.
+static func tree(parent: Node, pos: Vector3, scale := 1.0, leaf_tint := Color(0.35, 0.55, 0.25)) -> void:
+	var t := Node3D.new()
+	t.position = pos
+	parent.add_child(t)
+	cylinder(t, 0.22 * scale, 3.2 * scale, Vector3(0, 1.6 * scale, 0), surf("bark"))
+	var leaves := surf("leaves", leaf_tint)
+	var blobs := [Vector3(0, 4.0, 0), Vector3(0.9, 3.5, 0.3), Vector3(-0.8, 3.6, -0.4), Vector3(0.2, 4.6, -0.6), Vector3(-0.3, 3.3, 0.9)]
+	var radii := [1.7, 1.2, 1.3, 1.1, 1.1]
+	for i in blobs.size():
+		var s := sphere(t, radii[i] * scale, blobs[i] * scale, leaves)
+		s.scale = Vector3(1.0, 0.85, 1.0)
+
+
+static func bush(parent: Node, pos: Vector3, scale := 1.0) -> void:
+	var s := sphere(parent, 0.7 * scale, pos + Vector3(0, 0.45 * scale, 0), surf("leaves", Color(0.3, 0.5, 0.22)))
+	s.scale = Vector3(1.3, 0.8, 1.0)

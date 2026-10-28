@@ -22,6 +22,7 @@ var _phone_mesh: MeshInstance3D
 var _col: CollisionShape3D
 var _walk_t := 0.0
 var _legs: Array = []
+var _arms: Array = []
 
 
 func _ready() -> void:
@@ -35,28 +36,43 @@ func _ready() -> void:
 
 	_model = Node3D.new()
 	add_child(_model)
-	var torso := MeshInstance3D.new()
-	var tm := CapsuleMesh.new()
-	tm.radius = 0.3
-	tm.height = 1.0
-	torso.mesh = tm
-	torso.material_override = Kit.mat(Color(0.2, 0.45, 0.75))
-	torso.position.y = 1.15
-	_model.add_child(torso)
-	Kit.sphere(_model, 0.2, Vector3(0, 1.82, 0), Color(0.85, 0.65, 0.5))
-	Kit.box(_model, Vector3(0.42, 0.08, 0.3), Vector3(0, 1.98, 0.05), Color(0.8, 0.2, 0.2), false) # cap
-	for sx in [-0.13, 0.13]:
-		var leg := Kit.box(_model, Vector3(0.18, 0.7, 0.2), Vector3(sx, 0.35, 0), Color(0.2, 0.2, 0.25), false)
-		_legs.append(leg)
+	var skin := Kit.mat(Color(0.86, 0.66, 0.52))
+	var shirt := Kit.mat(Color(0.18, 0.42, 0.72))
+	var pants := Kit.mat(Color(0.16, 0.18, 0.24))
+	var shoes := Kit.mat(Color(0.12, 0.1, 0.09))
+	_capsule(_model, 0.21, 0.62, Vector3(0, 1.22, 0), shirt, Vector3(1.15, 1.0, 0.75))   # torso
+	_capsule(_model, 0.06, 0.16, Vector3(0, 1.56, 0), skin)                             # neck
+	var head := Kit.sphere(_model, 0.13, Vector3(0, 1.72, 0.01), skin)
+	head.scale = Vector3(0.9, 1.08, 1.0)
+	var hair := Kit.sphere(_model, 0.135, Vector3(0, 1.76, -0.015), Kit.mat(Color(0.18, 0.12, 0.08)))
+	hair.scale = Vector3(0.95, 0.85, 1.0)
+	Kit.box(_model, Vector3(0.26, 0.05, 0.12), Vector3(0, 1.845, 0.1), Kit.mat(Color(0.8, 0.2, 0.2)), false)  # cap brim
+	var hat := Kit.sphere(_model, 0.14, Vector3(0, 1.8, 0.0), Kit.mat(Color(0.8, 0.2, 0.2)))
+	hat.scale = Vector3(1.0, 0.55, 1.0)
+	for sx in [-0.04, 0.04]:
+		Kit.sphere(_model, 0.015, Vector3(sx, 1.74, 0.115), Kit.mat(Color(0.05, 0.05, 0.05)))
+	for side in [-1.0, 1.0]:
+		var hip := Node3D.new()
+		hip.position = Vector3(side * 0.1, 0.92, 0)
+		_model.add_child(hip)
+		_capsule(hip, 0.085, 0.86, Vector3(0, -0.43, 0), pants)
+		Kit.box(hip, Vector3(0.12, 0.08, 0.26), Vector3(0, -0.88, 0.05), shoes, false)
+		_legs.append(hip)
+		var shoulder := Node3D.new()
+		shoulder.position = Vector3(side * 0.27, 1.45, 0)
+		_model.add_child(shoulder)
+		_capsule(shoulder, 0.065, 0.36, Vector3(0, -0.15, 0), shirt)
+		_capsule(shoulder, 0.055, 0.32, Vector3(0, -0.42, 0), skin)
+		_arms.append(shoulder)
 	_bag = MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.45, 0.4, 0.35)
 	_bag.mesh = bm
 	_bag.material_override = Kit.mat(Color(0.75, 0.6, 0.4))
-	_bag.position = Vector3(0, 1.05, 0.45)
+	_bag.position = Vector3(0, 1.05, 0.38)
 	_bag.visible = false
 	_model.add_child(_bag)
-	_phone_mesh = Kit.box(_model, Vector3(0.08, 0.15, 0.02), Vector3(0.22, 1.25, 0.35), Color(0.05, 0.05, 0.05), false)
+	_phone_mesh = Kit.box(_model, Vector3(0.08, 0.15, 0.02), Vector3(0.2, 1.2, 0.3), Color(0.05, 0.05, 0.05), false)
 	_phone_mesh.visible = false
 
 	_pivot = Node3D.new()
@@ -71,6 +87,21 @@ func _ready() -> void:
 	camera.fov = 70.0
 	camera.cull_mask = 0xFFFFF & ~2
 	_spring.add_child(camera)
+
+
+func _capsule(parent: Node3D, radius: float, height: float, pos: Vector3, m: Material, scl := Vector3.ONE) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var cm := CapsuleMesh.new()
+	cm.radius = radius
+	cm.height = maxf(height, radius * 2.0)
+	cm.radial_segments = 12
+	cm.rings = 4
+	mi.mesh = cm
+	mi.material_override = m
+	mi.position = pos
+	mi.scale = scl
+	parent.add_child(mi)
+	return mi
 
 
 func set_active(on: bool) -> void:
@@ -130,7 +161,8 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0, 30.0 * delta)
 		_walk_t = 0.0
 	for i in _legs.size():
-		_legs[i].rotation.x = sin(_walk_t + i * PI) * 0.5
+		_legs[i].rotation.x = sin(_walk_t + i * PI) * 0.55
+		_arms[i].rotation.x = -sin(_walk_t + i * PI) * 0.45
 	move_and_slide()
 	_pivot.rotation = Vector3(pitch, yaw, 0)
 	if global_position.y < -20.0:

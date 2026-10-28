@@ -48,34 +48,71 @@ func build() -> void:
 func _ground_and_roads() -> void:
 	var size := N * B
 	var center := size / 2.0
-	Kit.box(self, Vector3(1600, 1, 1600), Vector3(center, -0.5, center), Color(0.24, 0.38, 0.18))
-	var asphalt := Color(0.18, 0.18, 0.2)
+	Kit.box(self, Vector3(1600, 1, 1600), Vector3(center, -0.5, center), Kit.surf("grass"))
+	var asphalt := Kit.surf("asphalt")
 	var length := size + RING * 2.0 + 16.0
 	for k in N + 1:
 		var p := k * B
 		Kit.box(self, Vector3(length, 0.04, ROAD_W), Vector3(center, 0.02, p), asphalt, false)
 		Kit.box(self, Vector3(ROAD_W, 0.05, length), Vector3(p, 0.025, center), asphalt, false)
-		Kit.box(self, Vector3(length, 0.02, 0.2), Vector3(center, 0.05, p), Color(0.95, 0.8, 0.2), false)
-		Kit.box(self, Vector3(0.2, 0.02, length), Vector3(p, 0.055, center), Color(0.95, 0.8, 0.2), false)
 	# I-95 Beltway ring
+	var hw := Kit.surf("asphalt", Color(0.85, 0.85, 0.88))
 	for p in [-RING, size + RING]:
-		Kit.box(self, Vector3(length, 0.045, 18.0), Vector3(center, 0.022, p), Color(0.22, 0.22, 0.24), false)
-		Kit.box(self, Vector3(18.0, 0.05, length), Vector3(p, 0.027, center), Color(0.22, 0.22, 0.24), false)
-		for off in [-0.4, 0.4]:
-			Kit.box(self, Vector3(length, 0.02, 0.25), Vector3(center, 0.06, p + off), Color(0.95, 0.8, 0.2), false)
-			Kit.box(self, Vector3(0.25, 0.02, length), Vector3(p + off, 0.065, center), Color(0.95, 0.8, 0.2), false)
-	# Sidewalk strips around each block (visual only)
-	var concrete := Color(0.5, 0.5, 0.49)
+		Kit.box(self, Vector3(length, 0.045, 18.0), Vector3(center, 0.022, p), hw, false)
+		Kit.box(self, Vector3(18.0, 0.05, length), Vector3(p, 0.027, center), hw, false)
+	_road_markings(length)
+	# Raised sidewalks with curbs around each block
+	var concrete := Kit.surf("concrete")
+	var curb := Kit.surf("concrete", Color(0.8, 0.8, 0.78))
 	var inner := B - ROAD_W
+	var sh := 0.12
 	for bx in N:
 		for bz in N:
 			var cx := bx * B + B / 2.0
 			var cz := bz * B + B / 2.0
 			var off := inner / 2.0 - WALK / 2.0
-			Kit.box(self, Vector3(inner, 0.06, WALK), Vector3(cx, 0.03, cz - off), concrete, false)
-			Kit.box(self, Vector3(inner, 0.06, WALK), Vector3(cx, 0.03, cz + off), concrete, false)
-			Kit.box(self, Vector3(WALK, 0.061, inner), Vector3(cx - off, 0.031, cz), concrete, false)
-			Kit.box(self, Vector3(WALK, 0.061, inner), Vector3(cx + off, 0.031, cz), concrete, false)
+			Kit.box(self, Vector3(inner, sh, WALK), Vector3(cx, sh / 2.0, cz - off), concrete)
+			Kit.box(self, Vector3(inner, sh, WALK), Vector3(cx, sh / 2.0, cz + off), concrete)
+			Kit.box(self, Vector3(WALK, sh, inner - 2.0 * WALK), Vector3(cx - off, sh / 2.0, cz), concrete)
+			Kit.box(self, Vector3(WALK, sh, inner - 2.0 * WALK), Vector3(cx + off, sh / 2.0, cz), concrete)
+			var co := inner / 2.0 + 0.1
+			Kit.box(self, Vector3(inner + 0.4, sh + 0.03, 0.25), Vector3(cx, (sh + 0.03) / 2.0, cz - co), curb, false)
+			Kit.box(self, Vector3(inner + 0.4, sh + 0.03, 0.25), Vector3(cx, (sh + 0.03) / 2.0, cz + co), curb, false)
+			Kit.box(self, Vector3(0.25, sh + 0.03, inner + 0.4), Vector3(cx - co, (sh + 0.03) / 2.0, cz), curb, false)
+			Kit.box(self, Vector3(0.25, sh + 0.03, inner + 0.4), Vector3(cx + co, (sh + 0.03) / 2.0, cz), curb, false)
+
+
+## Double yellow center lines, white edge lines and zebra crosswalks (multimeshes).
+func _road_markings(length: float) -> void:
+	var yellow := []
+	var white := []
+	var zebra := []
+	for k in N + 1:
+		var p := k * B
+		for j in N:
+			var a := j * B + ROAD_W / 2.0 + 4.0
+			var b := (j + 1) * B - ROAD_W / 2.0 - 4.0
+			var mid := (a + b) / 2.0
+			var seg := b - a
+			for off in [-0.15, 0.15]:
+				yellow.append(Transform3D(Basis.IDENTITY.scaled(Vector3(seg, 1, 1)), Vector3(mid, 0.06, p + off)))
+				yellow.append(Transform3D(Basis.IDENTITY.scaled(Vector3(1, 1, seg)), Vector3(p + off, 0.065, mid)))
+			for off in [-ROAD_W / 2.0 + 0.4, ROAD_W / 2.0 - 0.4]:
+				white.append(Transform3D(Basis.IDENTITY.scaled(Vector3(seg, 1, 1)), Vector3(mid, 0.06, p + off)))
+				white.append(Transform3D(Basis.IDENTITY.scaled(Vector3(1, 1, seg)), Vector3(p + off, 0.065, mid)))
+	for kx in N + 1:
+		for kz in N + 1:
+			var c := Vector3(kx * B, 0.07, kz * B)
+			var d := ROAD_W / 2.0 + 2.0
+			for i in 7:
+				var o := -ROAD_W / 2.0 + 1.0 + i * 2.0
+				zebra.append(Transform3D(Basis.IDENTITY, c + Vector3(o, 0, d)))
+				zebra.append(Transform3D(Basis.IDENTITY, c + Vector3(o, 0, -d)))
+				zebra.append(Transform3D(Basis(Vector3.UP, PI / 2.0), c + Vector3(d, 0, o)))
+				zebra.append(Transform3D(Basis(Vector3.UP, PI / 2.0), c + Vector3(-d, 0, o)))
+	Kit.multibox(self, Vector3(1, 0.02, 0.12), yellow, Color(0.95, 0.75, 0.15))
+	Kit.multibox(self, Vector3(1, 0.02, 0.14), white, Color(0.9, 0.9, 0.88))
+	Kit.multibox(self, Vector3(0.9, 0.02, 3.0), zebra, Color(0.92, 0.92, 0.9))
 
 
 func _streetlights() -> void:
@@ -242,29 +279,75 @@ func _house_row(bx: int, bz: int, side: int, slots: Array) -> void:
 func _house(lot: Node3D, addr_name: String) -> void:
 	var w := _rng.randf_range(9.0, 12.0)
 	var d := _rng.randf_range(8.0, 10.0)
-	var h := 3.6
+	var h := _rng.randf_range(3.4, 3.9)
 	var setback := _rng.randf_range(8.0, 12.0)
 	var color: Color = HOUSE_COLORS[_rng.randi() % HOUSE_COLORS.size()]
+	var trim := Color(0.95, 0.94, 0.9)
+	var brick_house := _rng.randf() < 0.3
+	var walls := Kit.surf("brick") if brick_house else Kit.surf("siding", color)
 	var hb := Node3D.new()
 	hb.position = Vector3(0, 0, -(setback + d / 2.0))
 	lot.add_child(hb)
-	Kit.box(hb, Vector3(w, h, d), Vector3(0, h / 2.0, 0), color)
-	var roof := MeshInstance3D.new()
+	Kit.box(hb, Vector3(w + 0.2, 0.5, d + 0.2), Vector3(0, 0.25, 0), Kit.surf("concrete", Color(0.75, 0.75, 0.75)))
+	Kit.box(hb, Vector3(w, h, d), Vector3(0, 0.5 + h / 2.0, 0), walls)
+	# Gable roof made from two sloped shingle slabs
+	var roof_mat := Kit.surf("shingles", ROOF_COLORS[_rng.randi() % ROOF_COLORS.size()])
+	var pitch := 0.55
+	var half_d := d / 2.0 + 0.5
+	var slab_len := half_d / cos(pitch)
+	var top := 0.5 + h
+	for sz in [-1.0, 1.0]:
+		var r := Kit.box(hb, Vector3(w + 0.8, 0.18, slab_len), Vector3(0, top + half_d * tan(pitch) / 2.0, sz * half_d / 2.0), roof_mat, false)
+		r.rotation.x = sz * pitch
+	# Gable ends
+	var gable := MeshInstance3D.new()
 	var pm := PrismMesh.new()
-	pm.size = Vector3(w + 1.0, 2.2, d + 1.0)
-	roof.mesh = pm
-	roof.material_override = Kit.mat(ROOF_COLORS[_rng.randi() % ROOF_COLORS.size()])
-	roof.position = Vector3(0, h + 1.1, 0)
-	hb.add_child(roof)
-	Kit.box(hb, Vector3(1.2, 2.2, 0.12), Vector3(0, 1.1, d / 2.0 + 0.06), Color(0.4, 0.25, 0.15), false)
+	pm.size = Vector3(d, half_d * tan(pitch) - 0.1, w - 0.05)
+	gable.mesh = pm
+	gable.material_override = walls
+	gable.rotation.y = PI / 2.0
+	gable.position = Vector3(0, top + pm.size.y / 2.0, 0)
+	hb.add_child(gable)
+	if _rng.randf() < 0.6:
+		Kit.box(hb, Vector3(0.9, 2.4, 0.9), Vector3(w * 0.3, top + 1.0, -d * 0.2), Kit.surf("brick"), false)
+	# Front: door, porch, windows with trim and shutters
+	var fz := d / 2.0
+	Kit.box(hb, Vector3(1.1, 2.2, 0.12), Vector3(0, 0.5 + 1.1, fz + 0.06), Kit.surf("wood", Color(0.7, 0.45, 0.3)), false)
+	Kit.box(hb, Vector3(1.4, 0.15, 0.18), Vector3(0, 0.5 + 2.25, fz + 0.08), trim, false)
+	Kit.box(hb, Vector3(3.6, 0.3, 2.0), Vector3(0, 0.35, fz + 1.0), Kit.surf("wood", Color(0.85, 0.8, 0.75)))
+	Kit.box(hb, Vector3(3.8, 0.12, 2.2), Vector3(0, 0.5 + 2.7, fz + 1.0), roof_mat, false)
+	for sx in [-1.6, 1.6]:
+		Kit.cylinder(hb, 0.08, 2.5, Vector3(sx, 0.5 + 1.35, fz + 1.9), trim, false)
 	for sx in [-1.0, 1.0]:
-		Kit.box(hb, Vector3(1.6, 1.2, 0.08), Vector3(sx * w * 0.3, 2.0, d / 2.0 + 0.05), Color(0.35, 0.5, 0.65), false)
-	Kit.label(hb, addr_name.split(" ")[0], Vector3(1.2, 2.5, d / 2.0 + 0.08), 40)
-	# front walk + driveway
-	Kit.box(lot, Vector3(1.4, 0.05, setback + WALK), Vector3(0, 0.035, -setback / 2.0 + WALK / 2.0), Color(0.68, 0.66, 0.62), false)
-	Kit.box(lot, Vector3(3.2, 0.05, setback + WALK), Vector3(w / 2.0 + 2.2, 0.034, -setback / 2.0 + WALK / 2.0), Color(0.4, 0.4, 0.42), false)
-	if _rng.randf() < 0.7:
-		_tree(lot, Vector3(-w / 2.0 - 2.5, 0, -setback / 2.0))
+		var wx: float = sx * w * 0.3
+		Kit.box(hb, Vector3(1.5, 1.3, 0.06), Vector3(wx, 0.5 + 1.75, fz + 0.03), Kit.glass(), false)
+		Kit.box(hb, Vector3(1.7, 0.12, 0.12), Vector3(wx, 0.5 + 2.45, fz + 0.06), trim, false)
+		Kit.box(hb, Vector3(1.8, 0.1, 0.22), Vector3(wx, 0.5 + 1.05, fz + 0.1), trim, false)
+		Kit.box(hb, Vector3(0.06, 1.3, 0.08), Vector3(wx, 0.5 + 1.75, fz + 0.07), trim, false)
+		for side in [-1.0, 1.0]:
+			Kit.box(hb, Vector3(0.45, 1.4, 0.06), Vector3(wx + side * 1.0, 0.5 + 1.75, fz + 0.05), color.darkened(0.45), false)
+	# Side windows
+	for sx in [-1.0, 1.0]:
+		Kit.box(hb, Vector3(0.06, 1.2, 1.4), Vector3(sx * (w / 2.0 + 0.03), 0.5 + 1.8, 0), Kit.glass(), false)
+	Kit.label(hb, addr_name.split(" ")[0], Vector3(0.95, 0.5 + 2.3, fz + 0.1), 40, Color(0.1, 0.1, 0.1))
+	# Garage on some houses
+	if _rng.randf() < 0.5:
+		var g := Node3D.new()
+		g.position = Vector3(w / 2.0 + 2.3, 0, 0.5)
+		hb.add_child(g)
+		Kit.box(g, Vector3(4.2, 3.0, 6.5), Vector3(0, 1.5, 0), walls)
+		Kit.box(g, Vector3(4.6, 0.25, 7.0), Vector3(0, 3.1, 0), roof_mat, false)
+		Kit.box(g, Vector3(3.2, 2.3, 0.08), Vector3(0, 1.15, 3.27), Color(0.92, 0.92, 0.9), false)
+	# Front walk, driveway, landscaping
+	Kit.box(lot, Vector3(1.4, 0.05, setback + 0.2), Vector3(0, 0.035, -setback / 2.0), Kit.surf("concrete"), false)
+	Kit.box(lot, Vector3(3.2, 0.05, setback + 0.5), Vector3(w / 2.0 + 2.3, 0.034, -setback / 2.0), Kit.surf("concrete", Color(0.75, 0.75, 0.75)), false)
+	for i in 3:
+		Kit.bush(lot, Vector3(-w / 2.0 + 0.8 + i * 1.3, 0, -setback + 0.6))
+	if _rng.randf() < 0.8:
+		_tree(lot, Vector3(-w / 2.0 - 2.5, 0, -setback / 2.0 + 1.0))
+	# Mailbox
+	Kit.cylinder(lot, 0.05, 1.0, Vector3(1.3, 0.5, -0.6), Color(0.2, 0.2, 0.2), false)
+	Kit.box(lot, Vector3(0.25, 0.25, 0.45), Vector3(1.3, 1.1, -0.6), Color(0.15, 0.2, 0.35), false)
 	_register_address(lot, addr_name, Vector3(0, 0, -setback + 1.0))
 
 
@@ -276,28 +359,43 @@ func _apartments(lot: Node3D, apt_name: String, floors: int, number: int, street
 	var b := Node3D.new()
 	b.position = Vector3(0, 0, -(setback + d / 2.0))
 	lot.add_child(b)
-	Kit.box(b, Vector3(w, h, d), Vector3(0, h / 2.0, 0), Color(0.7, 0.62, 0.55) if floors % 2 == 0 else Color(0.6, 0.6, 0.62))
+	var walls := Kit.surf("brick") if floors % 2 == 0 else Kit.surf("stucco", Color(0.82, 0.78, 0.7))
+	Kit.box(b, Vector3(w, h, d), Vector3(0, h / 2.0, 0), walls)
+	var panes := []
+	var sills := []
+	var n := int(w / 3.2)
 	for f in floors:
-		Kit.box(b, Vector3(w - 2.0, 1.2, 0.08), Vector3(0, 1.6 + f * 3.2, d / 2.0 + 0.05), Color(0.3, 0.42, 0.55), false)
-	Kit.box(b, Vector3(2.4, 2.6, 0.15), Vector3(0, 1.3, d / 2.0 + 0.08), Color(0.25, 0.2, 0.18), false)
-	Kit.box(b, Vector3(w + 0.4, 0.4, d + 0.4), Vector3(0, h + 0.2, 0), Color(0.3, 0.3, 0.32))
-	Kit.label(b, apt_name, Vector3(0, 3.4, d / 2.0 + 0.1), 72, Color(1, 0.95, 0.8))
-	Kit.box(lot, Vector3(2.0, 0.05, setback + WALK), Vector3(0, 0.035, -setback / 2.0 + WALK / 2.0), Color(0.68, 0.66, 0.62), false)
+		for i in n:
+			var x := -w / 2.0 + (i + 0.5) * w / n
+			if f == 0 and absf(x) < 2.5:
+				continue
+			panes.append(Transform3D(Basis.IDENTITY, Vector3(x, 1.7 + f * 3.2, d / 2.0 + 0.03)))
+			sills.append(Transform3D(Basis.IDENTITY, Vector3(x, 1.0 + f * 3.2, d / 2.0 + 0.08)))
+	Kit.multibox(b, Vector3(1.6, 1.5, 0.06), panes, Kit.glass())
+	Kit.multibox(b, Vector3(1.9, 0.12, 0.2), sills, Color(0.88, 0.86, 0.82))
+	Kit.box(b, Vector3(2.4, 2.6, 0.15), Vector3(0, 1.3, d / 2.0 + 0.08), Kit.glass(), false)
+	Kit.box(b, Vector3(4.0, 0.25, 2.0), Vector3(0, 3.0, d / 2.0 + 1.0), Color(0.15, 0.25, 0.35), false)
+	Kit.box(b, Vector3(w + 0.4, 0.6, d + 0.4), Vector3(0, h + 0.3, 0), Kit.surf("concrete", Color(0.7, 0.7, 0.7)))
+	Kit.box(b, Vector3(w - 1.0, 0.1, d - 1.0), Vector3(0, h + 0.62, 0), Kit.surf("gravel"), false)
+	Kit.label(b, apt_name, Vector3(0, 3.5, d / 2.0 + 0.12), 72, Color(1, 0.95, 0.8))
+	Kit.box(lot, Vector3(2.0, 0.05, setback + 0.2), Vector3(0, 0.035, -setback / 2.0), Kit.surf("concrete"), false)
+	for x in [-6.0, -4.0, 4.0, 6.0]:
+		Kit.bush(lot, Vector3(x, 0, -setback + 0.8))
 	_register_address(lot, "%s (%d %s)" % [apt_name, number, street], Vector3(0, 0, -setback + 1.0))
 
 
 func _tree(parent: Node3D, pos: Vector3) -> void:
-	var s := _rng.randf_range(0.8, 1.3)
-	Kit.cylinder(parent, 0.25 * s, 3.0 * s, pos + Vector3(0, 1.5 * s, 0), Color(0.4, 0.28, 0.18))
-	Kit.sphere(parent, 1.9 * s, pos + Vector3(0, 3.6 * s, 0), Color(0.2, 0.45 + _rng.randf() * 0.15, 0.2))
+	var tint := Color(0.3 + _rng.randf() * 0.1, 0.48 + _rng.randf() * 0.15, 0.2 + _rng.randf() * 0.08)
+	Kit.tree(parent, pos, _rng.randf_range(0.8, 1.25), tint)
 
 
 func _campus(lot: Node3D) -> void:
 	var b := Node3D.new()
 	b.position = Vector3(0, 0, -20)
 	lot.add_child(b)
-	Kit.box(b, Vector3(50, 12, 18), Vector3(0, 6, 0), Color(0.6, 0.35, 0.28))
-	Kit.box(b, Vector3(10, 16, 10), Vector3(0, 8, 5), Color(0.62, 0.37, 0.3))
+	Kit.box(b, Vector3(50, 12, 18), Vector3(0, 6, 0), Kit.surf("brick"))
+	Kit.box(b, Vector3(10, 16, 10), Vector3(0, 8, 5), Kit.surf("brick", Color(1.05, 1.0, 0.95)))
+	Kit.box(b, Vector3(11, 1.0, 11), Vector3(0, 16.5, 5), Color(0.9, 0.9, 0.88))
 	for x in [-3.0, -1.0, 1.0, 3.0]:
 		Kit.cylinder(b, 0.4, 7, Vector3(x, 3.5, 10.6), Color(0.95, 0.95, 0.92))
 	Kit.label(b, "UNIVERSITY OF DELAWHERE", Vector3(0, 8.5, 10.1), 110, Color(1, 0.85, 0.3))
@@ -310,9 +408,14 @@ func _park(bx: int, bz: int) -> void:
 	var p := Node3D.new()
 	p.position = Vector3(bx * B + B / 2.0, 0, bz * B + B / 2.0)
 	add_child(p)
-	Kit.box(p, Vector3(4, 0.05, 66), Vector3(0, 0.04, 0), Color(0.72, 0.68, 0.6), false)
-	Kit.box(p, Vector3(66, 0.05, 4), Vector3(0, 0.041, 0), Color(0.72, 0.68, 0.6), false)
-	Kit.box(p, Vector3(16, 0.06, 10), Vector3(18, 0.03, -18), Color(0.25, 0.45, 0.7), false)
+	Kit.box(p, Vector3(4, 0.05, 66), Vector3(0, 0.04, 0), Kit.surf("concrete", Color(0.95, 0.9, 0.82)), false)
+	Kit.box(p, Vector3(66, 0.05, 4), Vector3(0, 0.041, 0), Kit.surf("concrete", Color(0.95, 0.9, 0.82)), false)
+	var water := StandardMaterial3D.new()
+	water.albedo_color = Color(0.1, 0.22, 0.28)
+	water.metallic = 0.3
+	water.roughness = 0.05
+	Kit.box(p, Vector3(17, 0.3, 11), Vector3(18, 0.1, -18), Kit.surf("concrete"), false)
+	Kit.box(p, Vector3(16, 0.32, 10), Vector3(18, 0.1, -18), water, false)
 	Kit.box(p, Vector3(2, 1.2, 2), Vector3(0, 0.6, 0), Color(0.55, 0.55, 0.52))
 	Kit.box(p, Vector3(0.8, 2.2, 0.8), Vector3(0, 2.3, 0), Color(0.3, 0.45, 0.35))
 	Kit.label(p, "Caesar Rodknee\n(rode a horse, probably)", Vector3(0, 1.0, 1.05), 32)
@@ -321,12 +424,15 @@ func _park(bx: int, bz: int) -> void:
 		var a := i * TAU / 14.0
 		_tree(p, Vector3(cos(a) * 26.0, 0, sin(a) * 26.0))
 	for bpos in [Vector3(5, 0, 6), Vector3(-5, 0, -6), Vector3(6, 0, -5)]:
-		Kit.box(p, Vector3(2.2, 0.5, 0.6), bpos + Vector3(0, 0.45, 0), Color(0.45, 0.3, 0.2))
+		Kit.box(p, Vector3(2.2, 0.08, 0.6), bpos + Vector3(0, 0.48, 0), Kit.surf("wood"))
+		Kit.box(p, Vector3(2.2, 0.5, 0.08), bpos + Vector3(0, 0.8, -0.28), Kit.surf("wood"), false)
+		for lx in [-0.9, 0.9]:
+			Kit.box(p, Vector3(0.08, 0.45, 0.5), bpos + Vector3(lx, 0.22, 0), Color(0.15, 0.15, 0.15))
 	# Public restroom
 	var r := Node3D.new()
 	r.position = Vector3(-20, 0, 20)
 	p.add_child(r)
-	var rb := Kit.hollow_building(r, Vector3(7, 3.4, 6), Color(0.6, 0.55, 0.5), Color(0.3, 0.3, 0.3), 2.0, 2.6, Color(0.7, 0.7, 0.72), false)
+	var rb := Kit.hollow_building(r, Vector3(7, 3.4, 6), Kit.surf("brick"), Kit.surf("gravel"), 2.0, 2.6, null, false)
 	rb.rotation.y = PI
 	var rl := Kit.label(r, "PUBLIC RESTROOM", Vector3(0, 3.0, -3.15), 48)
 	rl.rotation.y = PI
@@ -342,10 +448,24 @@ func _shop(lot: Node3D, shop_name: String, size: Vector3, color: Color, setback 
 	var holder := Node3D.new()
 	holder.position = Vector3(0, 0, -(setback + size.z / 2.0))
 	lot.add_child(holder)
-	var b := Kit.hollow_building(holder, size, color, Color(0.25, 0.25, 0.27), door_w, door_h)
-	Kit.box(b, Vector3(minf(size.x - 2.0, 12.0), 1.2, 0.2), Vector3(0, size.y - 0.8, size.z / 2.0 + 0.15), Color(0.1, 0.1, 0.12), false)
-	Kit.label(b, shop_name, Vector3(0, size.y - 0.8, size.z / 2.0 + 0.27), 120, Color(1, 0.95, 0.75))
-	Kit.box(lot, Vector3(door_w + 1.0, 0.05, setback + WALK), Vector3(0, 0.036, -setback / 2.0 + WALK / 2.0), Color(0.6, 0.6, 0.58), false)
+	var walls: Material
+	if shop_name.hash() % 3 == 0:
+		walls = Kit.surf("brick")
+	else:
+		walls = Kit.surf("stucco", color.lerp(Color(0.9, 0.88, 0.82), 0.55))
+	var b := Kit.hollow_building(holder, size, walls, Kit.surf("gravel"), door_w, door_h)
+	var fz := size.z / 2.0
+	# Sign board in the brand color
+	var sign_w := minf(size.x - 2.0, 12.0)
+	Kit.box(b, Vector3(sign_w, 1.2, 0.2), Vector3(0, size.y - 0.9, fz + 0.2), color.darkened(0.35), false)
+	Kit.box(b, Vector3(sign_w + 0.2, 0.08, 0.3), Vector3(0, size.y - 0.26, fz + 0.2), Color(0.9, 0.9, 0.9), false)
+	Kit.label(b, shop_name, Vector3(0, size.y - 0.9, fz + 0.32), 120, Color(1, 0.97, 0.85))
+	# Striped awning over the storefront
+	if door_h <= 3.2 and size.y >= 4.0:
+		var aw := Kit.box(b, Vector3(size.x - 1.0, 0.08, 1.6), Vector3(0, door_h + 0.35, fz + 0.75), color, false)
+		aw.rotation.x = 0.35
+		Kit.box(b, Vector3(size.x - 1.0, 0.25, 0.04), Vector3(0, door_h + 0.02, fz + 1.5), color.darkened(0.2), false)
+	Kit.box(lot, Vector3(door_w + 1.0, 0.05, setback + 0.2), Vector3(0, 0.036, -setback / 2.0), Kit.surf("concrete"), false)
 	return b
 
 
@@ -548,8 +668,15 @@ func _dealership(lot: Node3D) -> void:
 		car_node.position = pos
 		car_node.rotation.y = 0.5
 		lot.add_child(car_node)
-		Kit.box(car_node, Vector3(1.8, 0.75, 4.3), Vector3(0, 0.75, 0), c.color)
-		Kit.box(car_node, Vector3(1.6, 0.6, 2.2), Vector3(0, 1.4, -0.2), c.color.darkened(0.2), false)
+		car_node.add_child(CarModel.build(c, false, true))
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(1.8, 1.0, 4.3)
+		cs.shape = bs
+		cs.position.y = 0.8
+		var sb := StaticBody3D.new()
+		sb.add_child(cs)
+		car_node.add_child(sb)
 		Kit.label(lot, "%s\n$%s" % [c.name, c.price], pos + Vector3(0, 2.8, 0), 40, Color(1, 1, 0.7), true)
 	Kit.label(lot, "WE FINANCE NOBODY!", Vector3(0, 3.5, -20), 72, Color(1, 0.3, 0.3), true)
 	_counter(b, Vector3(0, 0, -2.0), 4.0)

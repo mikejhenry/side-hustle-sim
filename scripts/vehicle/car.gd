@@ -42,9 +42,9 @@ func _ready() -> void:
 	add_child(col)
 	var cab_col := CollisionShape3D.new()
 	var cab_shape := BoxShape3D.new()
-	cab_shape.size = Vector3(1.6, 0.55, 2.2)
+	cab_shape.size = Vector3(1.6, 0.4, 2.0)
 	cab_col.shape = cab_shape
-	cab_col.position = Vector3(0, 1.42, -0.2)
+	cab_col.position = Vector3(0, 1.22, -0.2)
 	add_child(cab_col)
 
 	for spec in [[0.85, 1.35, true], [-0.85, 1.35, true], [0.85, -1.35, false], [-0.85, -1.35, false]]:
@@ -61,20 +61,11 @@ func _ready() -> void:
 		w.wheel_roll_influence = 0.05
 		w.wheel_friction_slip = 3.0
 		add_child(w)
-		var tire := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.36
-		cm.bottom_radius = 0.36
-		cm.height = 0.25
-		cm.radial_segments = 14
-		tire.mesh = cm
-		tire.rotation.z = PI / 2.0
-		tire.material_override = Kit.mat(Color(0.08, 0.08, 0.08))
-		w.add_child(tire)
+		w.add_child(CarModel.wheel_mesh())
 		_wheels.append(w)
 
 	fp_camera = Camera3D.new()
-	fp_camera.position = Vector3(0.38, 1.42, 0.05)
+	fp_camera.position = Vector3(0.38, 1.24, -0.15)
 	fp_camera.rotation.y = PI
 	fp_camera.fov = 78.0
 	fp_camera.near = 0.05
@@ -109,37 +100,19 @@ func apply_model() -> void:
 	var c := Game.car()
 	_visual = Node3D.new()
 	add_child(_visual)
-	var col: Color = c.color
 	var sz: Vector3 = c.size
-	var rusty: bool = Game.car_id == "rustwagon"
-	Kit.box(_visual, sz, Vector3(0, 0.75, 0), col, false)
-	# Cabin shell: thin roof + pillars so you can see out from the driver's seat.
-	Kit.box(_visual, Vector3(sz.x - 0.2, 0.06, 1.9), Vector3(0, 1.72, -0.3), col.darkened(0.15), false)
-	for x in [sz.x / 2.0 - 0.12, -sz.x / 2.0 + 0.12]:
-		for z in [0.66, -1.2]:
-			Kit.box(_visual, Vector3(0.05, 0.6, 0.05), Vector3(x, 1.43, z), col.darkened(0.15), false)
-	# Glass (only seen from outside; single-sided box faces)
-	var glass := MeshInstance3D.new()
-	var gb := BoxMesh.new()
-	gb.size = Vector3(sz.x - 0.24, 0.56, 1.8)
-	glass.mesh = gb
-	var gm := StandardMaterial3D.new()
-	gm.albedo_color = Color(0.4, 0.55, 0.65, 0.35)
-	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.material_override = gm
-	glass.position = Vector3(0, 1.42, -0.3)
-	_visual.add_child(glass)
-	# Lights
-	for x in [0.6, -0.6]:
-		Kit.box(_visual, Vector3(0.35, 0.15, 0.05), Vector3(x, 0.85, sz.z / 2.0 + 0.01), Color(1, 1, 0.85), false, 1.5)
-		Kit.box(_visual, Vector3(0.35, 0.15, 0.05), Vector3(x, 0.85, -sz.z / 2.0 - 0.01), Color(0.9, 0.05, 0.05), false, 1.0)
-	if rusty:
-		Kit.box(_visual, Vector3(0.6, 0.3, 0.02), Vector3(sz.x / 2.0 + 0.005, 0.7, -0.8), Color(0.45, 0.22, 0.1), false)
-		Kit.box(_visual, Vector3(0.02, 0.35, 0.9), Vector3(-sz.x / 2.0 - 0.005, 0.8, 1.0), Color(0.6, 0.6, 0.62), false)
-	# Dashboard + steering wheel (seen in first person)
-	Kit.box(_visual, Vector3(sz.x - 0.2, 0.3, 0.5), Vector3(0, 1.08, 0.85), Color(0.12, 0.12, 0.13), false)
+	_visual.add_child(CarModel.build(c, Game.car_id == "rustwagon"))
+	# Interior (seen in first person): dashboard, gauges, steering wheel, seats.
+	var dash := Kit.mat(Color(0.1, 0.1, 0.11))
+	Kit.box(_visual, Vector3(sz.x - 0.2, 0.22, 0.55), Vector3(0, 0.9, 0.78), dash, false)
+	var hood := Kit.box(_visual, Vector3(sz.x - 0.2, 0.04, 0.4), Vector3(0, 1.0, 0.6), dash, false)
+	hood.rotation.x = -0.2
+	Kit.box(_visual, Vector3(0.5, 0.14, 0.05), Vector3(0.38, 1.02, 0.66), Color(0.02, 0.02, 0.03), false)
+	Kit.box(_visual, Vector3(0.12, 0.08, 0.02), Vector3(0.28, 1.03, 0.635), Color(0.3, 0.8, 1.0), false, 1.5)
+	Kit.box(_visual, Vector3(0.12, 0.08, 0.02), Vector3(0.48, 1.03, 0.635), Color(1.0, 0.6, 0.2), false, 1.5)
+	Kit.box(_visual, Vector3(0.3, 0.2, 0.03), Vector3(0.0, 0.98, 0.6), Color(0.05, 0.08, 0.1), false, 0.4)
 	_steering_wheel = Node3D.new()
-	_steering_wheel.position = Vector3(0.38, 1.18, 0.55)
+	_steering_wheel.position = Vector3(0.38, 1.0, 0.5)
 	_steering_wheel.rotation.x = -0.35
 	_visual.add_child(_steering_wheel)
 	var ring := MeshInstance3D.new()
@@ -153,8 +126,8 @@ func apply_model() -> void:
 	Kit.box(_steering_wheel, Vector3(0.3, 0.04, 0.03), Vector3.ZERO, Color(0.1, 0.1, 0.1), false)
 	# Seats
 	for x in [0.38, -0.38]:
-		Kit.box(_visual, Vector3(0.55, 0.15, 0.55), Vector3(x, 1.02, -0.15), Color(0.25, 0.22, 0.2), false)
-		Kit.box(_visual, Vector3(0.55, 0.65, 0.12), Vector3(x, 1.35, -0.45), Color(0.25, 0.22, 0.2), false)
+		Kit.box(_visual, Vector3(0.55, 0.15, 0.55), Vector3(x, 0.72, -0.35), Color(0.25, 0.22, 0.2), false)
+		Kit.box(_visual, Vector3(0.55, 0.65, 0.12), Vector3(x, 1.05, -0.65), Color(0.25, 0.22, 0.2), false)
 
 
 func set_driver(on: bool) -> void:

@@ -35,6 +35,11 @@ func _ready() -> void:
 	await shot("02_driving_first_person")
 	main.car.toggle_camera()
 	await shot("03_driving_chase")
+	var far: Dictionary = main.town.restaurants[0]
+	main.set_waypoint(far.door, far.name)
+	await frames(40)
+	await shot("08_gps_directions")
+	main.map_waypoint = {}
 	main.car.toggle_camera()
 	main.exit_car()
 	Gigs.set_online("doordish", true)

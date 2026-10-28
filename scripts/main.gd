@@ -15,6 +15,8 @@ var sky_mat: ProceduralSkyMaterial
 var beacon: Node3D
 var driving := false
 var map_waypoint: Dictionary = {}
+var gps: GPS
+var _gps_timer := 0.0
 
 var _current: Interactable = null
 var _was_night := false
@@ -52,6 +54,9 @@ func _ready() -> void:
 	beacon = Kit.beacon(Color(0.2, 1.0, 0.4))
 	add_child(beacon)
 	beacon.visible = false
+	gps = GPS.new()
+	gps.town = town
+	add_child(gps)
 
 	player.set_active(true)
 	Game.home_changed.connect(_on_home_changed)
@@ -69,15 +74,30 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_white = 6.0
 	env.fog_enabled = true
-	env.fog_density = 0.0015
+	env.fog_density = 0.0012
+	env.fog_aerial_perspective = 0.4
+	# Screen-space ambient occlusion grounds objects; glow makes lights and the sun bloom.
+	env.ssao_enabled = true
+	env.ssao_radius = 1.2
+	env.ssao_intensity = 2.0
+	env.glow_enabled = true
+	env.glow_intensity = 0.6
+	env.glow_bloom = 0.05
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.1
+	sky_mat.sun_angle_max = 20.0
+	sky_mat.sky_curve = 0.12
 	we.environment = env
 	add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 120.0
+	sun.shadow_blur = 1.5
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 160.0
 	add_child(sun)
 
 
@@ -134,7 +154,7 @@ func exit_car() -> void:
 
 # --- Frame update --------------------------------------------------------------------
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# Find the nearest usable interactable.
 	var pos := actor_position()
 	var best: Interactable = null
@@ -179,7 +199,28 @@ func _process(_delta: float) -> void:
 			map_waypoint = {}
 		obj += ("\n" if obj != "" else "") + "GPS: %s  (%.2f mi)" % [t.label, dist / GameData.METERS_PER_MILE]
 	hud.set_objective(obj)
+	_update_gps(delta, t)
 	_update_sky()
+
+
+func _update_gps(delta: float, t: Dictionary) -> void:
+	_gps_timer -= delta
+	if t.is_empty():
+		if gps.instruction != "":
+			gps.clear()
+			hud.set_nav(gps)
+		return
+	if _gps_timer > 0.0:
+		return
+	_gps_timer = 0.35
+	var f: Vector3
+	if driving:
+		f = car.global_basis.z
+	else:
+		var y := player.facing()
+		f = Vector3(sin(y), 0, cos(y))
+	gps.update(actor_position(), f, t.pos, t.label, driving)
+	hud.set_nav(gps)
 
 
 func _update_sky() -> void:

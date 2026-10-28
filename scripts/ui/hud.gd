@@ -13,6 +13,11 @@ var _bars := {}
 var _prompt: Label
 var _objective: Label
 var _toasts: VBoxContainer
+var _nav: PanelContainer
+var _nav_arrow: Control
+var _nav_text: Label
+var _nav_dist: Label
+var _nav_turn := "straight"
 var _drive: PanelContainer
 var _speed: Label
 var _fuel: ProgressBar
@@ -125,9 +130,36 @@ func _ready() -> void:
 	_toasts.anchor_right = 0.5
 	_toasts.offset_left = -330
 	_toasts.offset_right = 330
-	_toasts.offset_top = 16
+	_toasts.offset_top = 112
 	_toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_toasts)
+
+	# Turn-by-turn banner (top center)
+	_nav = PanelContainer.new()
+	_nav.add_theme_stylebox_override("panel", _style(Color(0.05, 0.25, 0.5, 0.88), 10))
+	_nav.anchor_left = 0.5
+	_nav.anchor_right = 0.5
+	_nav.offset_left = -260
+	_nav.offset_right = 260
+	_nav.offset_top = 16
+	_nav.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_nav.visible = false
+	root.add_child(_nav)
+	var nh := HBoxContainer.new()
+	nh.add_theme_constant_override("separation", 14)
+	_nav.add_child(nh)
+	_nav_arrow = Control.new()
+	_nav_arrow.custom_minimum_size = Vector2(72, 72)
+	_nav_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_nav_arrow.draw.connect(_draw_nav_arrow)
+	nh.add_child(_nav_arrow)
+	var nv := VBoxContainer.new()
+	nv.alignment = BoxContainer.ALIGNMENT_CENTER
+	nv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nh.add_child(nv)
+	_nav_dist = _label(nv, "", 28, Color.WHITE)
+	_nav_text = _label(nv, "", 19, Color(0.85, 0.93, 1.0))
+	_nav_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	# Interaction prompt (bottom center)
 	_prompt = _label(root, "", 22, Color(1, 1, 1))
@@ -321,6 +353,48 @@ func _fmt_money(v: float) -> String:
 
 func set_prompt(text: String) -> void:
 	_prompt.text = "[E]  " + text if text != "" else ""
+
+
+## Updates the turn-by-turn banner from the GPS node (hidden when there is no route).
+func set_nav(gps: GPS) -> void:
+	_nav.visible = gps.instruction != ""
+	if not _nav.visible:
+		return
+	_nav_text.text = gps.instruction
+	_nav_dist.text = gps.distance_text if gps.distance_text != "" else gps.instruction
+	_nav_dist.visible = gps.distance_text != ""
+	if gps.turn != _nav_turn:
+		_nav_turn = gps.turn
+		_nav_arrow.queue_redraw()
+
+
+func _draw_nav_arrow() -> void:
+	var c := _nav_arrow.size / 2.0
+	var white := Color.WHITE
+	var w := 9.0
+	match _nav_turn:
+		"left", "right":
+			var s := -1.0 if _nav_turn == "left" else 1.0
+			# Stem up from the bottom, then bend toward the turn.
+			_nav_arrow.draw_polyline(PackedVector2Array([
+				c + Vector2(-s * 8, 30), c + Vector2(-s * 8, -4), c + Vector2(-s * 2, -10), c + Vector2(s * 12, -10)]), white, w)
+			_nav_arrow.draw_colored_polygon(PackedVector2Array([
+				c + Vector2(s * 30, -10), c + Vector2(s * 10, -26), c + Vector2(s * 10, 6)]), white)
+		"uturn":
+			_nav_arrow.draw_line(c + Vector2(10, -12), c + Vector2(10, 30), white, w)
+			_nav_arrow.draw_arc(c + Vector2(-2, -12), 12.0, PI, TAU, 16, white, w)
+			_nav_arrow.draw_line(c + Vector2(-14, -12), c + Vector2(-14, 8), white, w)
+			_nav_arrow.draw_colored_polygon(PackedVector2Array([
+				c + Vector2(-14, 26), c + Vector2(-28, 6), c + Vector2(0, 6)]), white)
+		"arrive":
+			_nav_arrow.draw_circle(c + Vector2(0, -6), 18.0, white)
+			_nav_arrow.draw_colored_polygon(PackedVector2Array([
+				c + Vector2(-15, 4), c + Vector2(15, 4), c + Vector2(0, 30)]), white)
+			_nav_arrow.draw_circle(c + Vector2(0, -6), 7.0, Color(0.05, 0.25, 0.5))
+		_:
+			_nav_arrow.draw_line(c + Vector2(0, 30), c + Vector2(0, -10), white, w)
+			_nav_arrow.draw_colored_polygon(PackedVector2Array([
+				c + Vector2(0, -30), c + Vector2(-16, -8), c + Vector2(16, -8)]), white)
 
 
 func set_objective(text: String) -> void:

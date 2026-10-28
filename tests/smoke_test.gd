@@ -87,6 +87,14 @@ func _ready() -> void:
 	Gigs.accept(o.id)
 	check(Gigs.job.stage == "to_restaurant", "accepted, heading to restaurant")
 	check(not Gigs.target().is_empty(), "GPS target set")
+	await frames(30)
+	var gps: GPS = main.gps
+	check(gps.route.size() >= 2 and gps.instruction != "", "turn-by-turn: %s, %s" % [gps.instruction, gps.distance_text])
+	# Route from one corner of the grid to the other must turn once.
+	gps.update(Vector3(5, 0, 2), Vector3(1, 0, 0), Vector3(360, 0, 268), "Test", true)
+	check(gps.turn in ["left", "right"] and gps.instruction.begins_with("Turn"), "corner route: %s (%s)" % [gps.instruction, gps.turn])
+	gps.update(Vector3(5, 0, 2), Vector3(-1, 0, 0), Vector3(360, 0, 268), "Test", true)
+	check(gps.turn == "uturn", "u-turn when facing away")
 	await _use_nearest_with("Pick up DoorDish", Gigs.job.restaurant.door, 15.0)
 	check(Gigs.job.get("stage", "") == "to_customer", "picked up food")
 	await _use_nearest_with("Leave", Gigs.job.customer.door, 4.0)
