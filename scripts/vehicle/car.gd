@@ -27,6 +27,13 @@ var _prev_velocity := Vector3.ZERO
 var _crash_cooldown := 0.0
 var _flip_timer := 0.0
 
+# Mirrors: small extra views of the world rendered from cameras on the car. The HUD shows
+# their textures (flipped like a real mirror) while you drive in first person.
+var mirrors_enabled := true
+var mirror_views := {}      # "rear" / "left" / "right" -> SubViewport
+var _mirror_cams := {}      # same keys -> [Camera3D, local Transform3D]
+var _mirror_frame := 0
+
 
 func _ready() -> void:
 	mass = 1150.0
@@ -88,9 +95,66 @@ func _ready() -> void:
 		add_child(l)
 		_lights.append(l)
 
+	_build_mirrors()
 	apply_model()
 	Game.car_changed.connect(apply_model)
 	_last_pos = global_position
+
+
+func _build_mirrors() -> void:
+	for key in ["rear", "left", "right"]:
+		var sv := SubViewport.new()
+		sv.size = Vector2i(400, 100) if key == "rear" else Vector2i(200, 130)
+		sv.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		sv.positional_shadow_atlas_size = 0
+		add_child(sv)
+		var cam := Camera3D.new()
+		cam.cull_mask = 0xFFFFF & ~2
+		cam.fov = 34.0 if key == "rear" else 42.0
+		cam.near = 0.1
+		cam.far = 160.0
+		sv.add_child(cam)
+		mirror_views[key] = sv
+		_mirror_cams[key] = [cam, Transform3D.IDENTITY]
+	_place_mirror_cams()
+
+
+## Puts the mirror cameras where the mirrors are on the current car. A camera looks down
+## its -Z, which is the car's rear, so the rear one needs no turn; the side ones angle out.
+func _place_mirror_cams() -> void:
+	if _mirror_cams.is_empty():
+		return
+	var sz: Vector3 = Game.car().size
+	_mirror_cams.rear[1] = Transform3D(Basis(Vector3.RIGHT, -0.04), Vector3(0, 1.35, -sz.z / 2.0 - 0.15))
+	_mirror_cams.left[1] = Transform3D(Basis(Vector3.UP, -0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(sz.x / 2.0 + 0.12, 1.08, 0.7))
+	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(-sz.x / 2.0 - 0.12, 1.08, 0.7))
+
+
+func mirrors_visible() -> bool:
+	return mirrors_enabled and driver_active and not chase_cam
+
+
+func mirror_texture(key: String) -> Texture2D:
+	return mirror_views[key].get_texture()
+
+
+func _update_mirrors() -> void:
+	var on := mirrors_visible()
+	if not on:
+		for key in mirror_views:
+			mirror_views[key].render_target_update_mode = SubViewport.UPDATE_DISABLED
+		return
+	# One extra view per frame keeps the cost low: the rearview refreshes every other frame
+	# and each side mirror every fourth.
+	_mirror_frame += 1
+	var key := "rear" if _mirror_frame % 2 == 0 else ("left" if _mirror_frame % 4 == 1 else "right")
+	var entry: Array = _mirror_cams[key]
+	(entry[0] as Camera3D).global_transform = global_transform * (entry[1] as Transform3D)
+	mirror_views[key].render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+func _process(_delta: float) -> void:
+	_update_mirrors()
 
 
 ## Rebuilds the body meshes to match the owned car.
@@ -101,6 +165,7 @@ func apply_model() -> void:
 	_visual = Node3D.new()
 	add_child(_visual)
 	var sz: Vector3 = c.size
+	_place_mirror_cams()
 	_visual.add_child(CarModel.build(c, Game.car_id == "rustwagon"))
 	# Interior (seen in first person): dashboard, gauges, steering wheel, seats.
 	var dash := Kit.mat(Color(0.1, 0.1, 0.11))
@@ -175,8 +240,8 @@ func _physics_process(delta: float) -> void:
 
 	var hard := 0.0
 	if driver_active and not input_locked:
-		var throttle := Input.get_action_strength("move_forward")
-		var back := Input.get_action_strength("move_back")
+		var throttle := maxf(Input.get_action_strength("move_forward"), Input.get_action_strength("throttle"))
+		var back := maxf(Input.get_action_strength("move_back"), Input.get_action_strength("brake_reverse"))
 		var steer_in := Input.get_axis("move_right", "move_left")
 		if Game.energy < 15.0:
 			# Drowsy driving: the car wanders.
@@ -211,6 +276,15 @@ func _physics_process(delta: float) -> void:
 		steering = move_toward(steering, 0.0, delta)
 		brake = 6.0 if spd < 3.0 else 1.0
 
+	if driver_active:
+		# Right stick looks around; it springs back to the road when released.
+		var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+		if look.length() > 0.05:
+			_look_yaw = clampf(-look.x * 1.6, -1.9, 1.9)
+			_look_pitch = clampf(-0.08 - look.y * 0.5, -0.8, 0.5)
+		elif Game.using_pad:
+			_look_yaw = move_toward(_look_yaw, 0.0, 4.0 * delta)
+			_look_pitch = move_toward(_look_pitch, -0.08, 2.0 * delta)
 	if _steering_wheel:
 		_steering_wheel.rotation.z = -steering * 4.0
 	fp_camera.rotation = Vector3(_look_pitch, PI + _look_yaw, 0)

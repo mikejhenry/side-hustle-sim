@@ -24,22 +24,33 @@ No assets to download: the town is built in code at startup, and the surface tex
 
 ## Controls
 
-| Key | Action |
-| --- | --- |
-| WASD / arrows | Walk or drive |
-| Mouse | Look around |
-| Shift | Sprint |
-| Space | Jump / handbrake |
-| E | Interact, get in or out of the car |
-| Tab or P | Phone |
-| C | Driving camera: first person / chase |
-| L | Headlights |
-| R | Flip the car upright |
-| F1 | Help |
-| F3 | Graphics quality: high / low (low is the default on Intel graphics) |
-| F5 / F9 | Save / load |
-| Esc | Free the mouse cursor |
-| F7 / F8 | Dev cheats: 10x time speed / +$500 |
+| Keyboard | Gamepad (Xbox names) | Action |
+| --- | --- | --- |
+| WASD / arrows | Left stick | Walk, or steer |
+| W / S | RT / LT | Gas / brake and reverse |
+| Mouse | Right stick | Look around |
+| Shift | L3 | Sprint |
+| Space | A | Jump / handbrake |
+| E | X | Interact, get in or out of the car |
+| Tab or P | Y | Phone |
+| | B | Back (phone home screen, close menus) |
+| C | LB | Driving camera: first person / chase |
+| M | D-pad up | Mirrors on / off |
+| L | RB | Headlights |
+| R | D-pad down | Flip the car upright |
+| H | R3 | Horn |
+| Esc | Start | Pause menu (resume, controls, save/load, graphics, tutorial, quit) |
+| F1 | Back | Controls |
+| F3 | | Graphics quality: high / low (low is the default on Intel graphics) |
+| F5 / F9 | | Save / load |
+| F7 / F8 | | Dev cheats: 10x time speed / +$500 |
+
+With a gamepad, the phone and menus highlight a button: move with the D-pad and press A.
+
+**Tutorial.** The first time you play, a guided tour walks you through the controls, the phone,
+your needs, and then drives you (with the GPS) to Lube & Tube, WahWah, a restaurant, the grocery
+store, Honest Al's, the Jungle Flex station and your room at Dottie's, ending with your first
+gig. Skip or restart it from the pause menu.
 
 ## The gig apps
 
@@ -69,6 +80,19 @@ higher pay.
 **Turn-by-turn GPS.** Any job or Maps waypoint gets a blue route on the minimap and a
 next-turn banner at the top of the screen ("Turn left onto Market St, 0.3 mi").
 
+**Mirrors.** In first person, your car has a working rearview mirror (top center) and side
+mirrors (left and right). Each is a small extra camera view, refreshed in turn to keep it cheap.
+
+**Police.** Three cop cars patrol with traffic. The speed limit is 30 mph in town and 45 on the
+beltway (shown next to your speed). A cop only notices you inside its field of view (ahead and
+to the sides, not behind) with a clear line of sight. Speeding more than 7 over, or crashing,
+in front of one starts a chase: lights flash and it follows you through the streets. Pull over
+and stop to get a ticket ($75 + $10 per mph over, more if you ran). If you can't pay, it becomes
+a bill. Get far enough away for long enough and you escape.
+
+**Phone upgrade.** The Me app sells the Pear uPhone 16 Pro ($350). It shows nearby police on
+your minimap (blue COP badges, flashing red when they're after you), and its battery lasts longer.
+
 All balance numbers (prices, pay, wear rates, need rates) live in `scripts/data/game_data.gd`.
 
 ## Project layout
@@ -83,7 +107,7 @@ scripts/data/game_data.gd All tunable data (cars, homes, apps, menus, rates)
 scripts/world/town.gd     Procedural New Castlewood County map, buildings, interiors
 scripts/world/kit.gd      Box/label/building/material helpers
 scripts/world/gps.gd      Turn-by-turn routing on the street grid
-scripts/world/traffic.gd  AI traffic on the street grid
+scripts/world/traffic.gd  AI traffic and police on the street grid
 scripts/player/humanoid.gd  Quaternius character with a procedural walk cycle
 scripts/vehicle/car_model.gd  Car body model (shared by your car and the dealer lot)
 tools/gen_textures.py     Generates the tiling PBR textures in assets/textures
@@ -92,6 +116,8 @@ scripts/player/player.gd  Third-person character
 scripts/vehicle/car.gd    VehicleBody3D car with first-person cockpit
 scripts/ui/hud.gd         HUD, minimap, toasts, menus
 scripts/ui/phone.gd       The phone and its apps
+scripts/ui/pause_menu.gd  Pause menu
+scripts/ui/tutorial.gd    Guided first-day tutorial
 tests/                    Headless smoke test and screenshot renderer
 docs/DESIGN.md            Design doc and roadmap
 ```

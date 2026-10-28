@@ -24,15 +24,32 @@ func _ready() -> void:
 		out_dir = args[0]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	main = load("res://scenes/main.tscn").instantiate()
+	main.auto_tutorial = false
 	add_child(main)
 	await frames(30)
 	# The software GL renderer used in CI over-brightens shadowed scenes; real GPUs are fine.
 	if "--no-shadows" in args:
 		main.sun.shadow_enabled = false
 	Game.minute = 10 * 60.0
+	main.start_tutorial()
 	await shot("01_walking")
+	main.tutorial.finish(true)
 	main.enter_car()
 	await shot("02_driving_first_person")
+	# A cop pulling you over, seen in the mirrors, with the upgraded phone's minimap badge.
+	var tr: Traffic = main.traffic
+	var cop = tr.cops[0]
+	var car: Node3D = main.car
+	cop.global_transform = Transform3D(car.global_basis, Vector3(car.global_position.x, 0, car.global_position.z) - car.global_basis.z * 16.0)
+	tr.start_chase(cop, "speeding (44 in a 30)")
+	tr._stopped_time = -100000.0
+	Game.phone_pro = true
+	await frames(30)
+	await shot("10_police_in_mirrors")
+	tr._end_chase("test")
+	main.pause_menu.open()
+	await shot("11_pause_menu")
+	main.pause_menu.close()
 	main.car.toggle_camera()
 	await shot("03_driving_chase")
 	var far: Dictionary = main.town.restaurants[0]

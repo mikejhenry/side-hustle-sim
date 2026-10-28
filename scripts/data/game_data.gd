@@ -89,6 +89,17 @@ const HOMES := {
 }
 const HOME_ORDER := ["room", "studio", "twobr", "house"]
 const PHONE_BILL := 15.0
+const PHONE_PRO_NAME := "Pear uPhone 16 Pro"
+const PHONE_PRO_PRICE := 350.0
+
+# Traffic law
+const SPEED_LIMIT := 30.0       # mph in town
+const BELTWAY_LIMIT := 45.0     # mph on the ring road
+const TICKET_SLACK := 7.0       # mph over the limit before a cop bothers
+const TICKET_BASE := 75.0
+const TICKET_PER_MPH := 10.0
+const EVADING_FINE := 150.0
+const RECKLESS_FINE := 180.0
 const HOME_GROCERIES_PRICE := 32.0
 const HOME_GROCERIES_MEALS := 6
 

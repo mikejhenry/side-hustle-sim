@@ -150,6 +150,9 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= gravity * delta
 	var input_dir := Vector2.ZERO
 	if not input_locked:
+		var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+		yaw -= look.x * 2.6 * delta
+		pitch = clampf(pitch - look.y * 1.8 * delta, -1.2, 0.6)
 		input_dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		if Input.is_action_just_pressed("jump") and is_on_floor():
 			velocity.y = JUMP_VELOCITY
@@ -171,8 +174,8 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0, 30.0 * delta)
 		_walk_t = 0.0
 	if _human:
-		var amount := clampf(Vector2(velocity.x, velocity.z).length() / WALK_SPEED, 0.0, 1.3)
-		_human.pose(_walk_t * 0.5, amount, _bag.visible)
+		var hspeed := Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0
+		_human.animate(delta, hspeed, _bag.visible)
 	for i in _legs.size():
 		_legs[i].rotation.x = sin(_walk_t + i * PI) * 0.55
 		_arms[i].rotation.x = -sin(_walk_t + i * PI) * 0.45

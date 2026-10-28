@@ -31,6 +31,11 @@ var _drowsy: ColorRect
 var _help: PanelContainer
 var _mm_cam: Camera3D
 var _mm_marker: MeshInstance3D
+var _limit: Label
+var _police: PanelContainer
+var _police_label: Label
+var _mirrors := {}          # "rear" / "left" / "right" -> PanelContainer holding a TextureRect
+var _mirrors_shown := false
 
 const TOAST_COLORS := {
 	"info": Color(0.9, 0.92, 1.0), "good": Color(0.55, 1.0, 0.6), "warn": Color(1.0, 0.85, 0.35),
@@ -180,7 +185,22 @@ func _ready() -> void:
 	_drive.offset_bottom = -16
 	var dv := VBoxContainer.new()
 	_drive.add_child(dv)
-	_speed = _label(dv, "0 MPH", 34)
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 16)
+	dv.add_child(srow)
+	_speed = _label(srow, "0 MPH", 34)
+	_limit = _label(srow, "LIMIT\n30", 13, Color(0.1, 0.1, 0.1))
+	_limit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_limit.label_settings.outline_size = 0
+	var sign_style := StyleBoxFlat.new()
+	sign_style.bg_color = Color(0.95, 0.95, 0.92)
+	sign_style.set_border_width_all(2)
+	sign_style.border_color = Color(0.1, 0.1, 0.1)
+	sign_style.set_corner_radius_all(4)
+	sign_style.content_margin_left = 6
+	sign_style.content_margin_right = 6
+	_limit.add_theme_stylebox_override("normal", sign_style)
+	_limit.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var frow := HBoxContainer.new()
 	dv.add_child(frow)
 	_label(frow, "Fuel", 15).custom_minimum_size.x = 50
@@ -191,6 +211,58 @@ func _ready() -> void:
 	frow.add_child(_fuel)
 	_car_warn = _label(dv, "", 15, Color(1, 0.5, 0.35))
 	_drive.visible = false
+
+	# Police alert (lower center)
+	_police = PanelContainer.new()
+	_police.add_theme_stylebox_override("panel", _style(Color(0.6, 0.05, 0.05, 0.9), 8))
+	_police.anchor_left = 0.5
+	_police.anchor_right = 0.5
+	_police.anchor_top = 1.0
+	_police.anchor_bottom = 1.0
+	_police.offset_left = -230
+	_police.offset_right = 230
+	_police.offset_top = -262
+	_police.offset_bottom = -214
+	_police.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_police.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_police.visible = false
+	root.add_child(_police)
+	_police_label = _label(_police, "POLICE: pull over and stop", 22)
+	_police_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	# Mirrors (first-person driving): rearview top center, side mirrors left and right.
+	for key in ["rear", "left", "right"]:
+		var frame := PanelContainer.new()
+		var fs := _style(Color(0.05, 0.05, 0.06, 0.95), 10)
+		fs.set_content_margin_all(4)
+		frame.add_theme_stylebox_override("panel", fs)
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var tr := TextureRect.new()
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_SCALE
+		tr.flip_h = true    # a mirror shows things the other way around
+		tr.custom_minimum_size = Vector2(400, 100) if key == "rear" else Vector2(200, 130)
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.add_child(tr)
+		match key:
+			"rear":
+				frame.anchor_left = 0.5
+				frame.anchor_right = 0.5
+				frame.offset_left = -204
+				frame.offset_top = 12
+			"left":
+				frame.anchor_top = 0.5
+				frame.offset_left = 16
+				frame.offset_top = 70
+			"right":
+				frame.anchor_left = 1.0
+				frame.anchor_right = 1.0
+				frame.anchor_top = 0.5
+				frame.offset_left = -224
+				frame.offset_top = 70
+		frame.visible = false
+		root.add_child(frame)
+		_mirrors[key] = frame
 
 	# Menu popup (center)
 	_menu = PanelContainer.new()
@@ -233,16 +305,23 @@ func _ready() -> void:
 	Game.slept.connect(_on_slept)
 
 
-const HELP_TEXT := """SIDE HUSTLE SIM: CONTROLS
+const HELP_TEXT := """SIDE HUSTLE SIM: CONTROLS            (keyboard  /  gamepad)
 
-WASD / arrows: walk or drive        Mouse: look
-Shift: sprint        Space: jump / handbrake
-E: interact, get in or out of the car
-Tab or P: phone (gig apps, bank, garage, maps)
-C: driving camera (first person / chase)
-L: headlights        R: flip car upright
-F5: save        F9: load        F1: this help     F3: graphics quality
-Esc: free the mouse cursor
+WASD or arrows / left stick: walk or drive      Mouse / right stick: look
+Gamepad driving: RT gas, LT brake and reverse, left stick steers
+Shift / L3: sprint        Space / A: jump or handbrake
+E / X: interact, get in or out of the car
+Tab or P / Y: phone (gig apps, bank, garage, maps)     B: back
+C / LB: driving camera (first person / chase)     M / D-pad up: mirrors
+L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
+Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
+F5: save        F9: load
+
+THE LAW
+Speed limit is 30 mph in town and 45 on the beltway. Police only notice
+you if you're in front of them or off to the side with nothing in the way.
+If one lights you up, pull over and stop to take the ticket. Running makes
+it worse. An upgraded phone (Me app) shows nearby cops on your map.
 
 HOW TO PLAY
 Open your phone and go online in a gig app. Accept offers, follow the
@@ -320,8 +399,14 @@ func _process(_delta: float) -> void:
 	if main:
 		var driving: bool = main.is_driving()
 		_drive.visible = driving
+		_update_mirrors()
+		_update_police()
 		if driving:
-			_speed.text = "%d MPH" % int(main.car.speed_mph())
+			var mph: float = main.car.speed_mph()
+			var limit: float = main.traffic.speed_limit(main.car.global_position) if main.traffic else GameData.SPEED_LIMIT
+			_speed.text = "%d MPH" % int(mph)
+			_speed.label_settings.font_color = Color(1, 0.4, 0.35) if mph > limit + GameData.TICKET_SLACK else Color.WHITE
+			_limit.text = "LIMIT\n%d" % int(limit)
 			_fuel.value = Game.fuel / Game.car().tank * 100.0
 			var warns := []
 			if Game.fuel <= 0.0:
@@ -338,6 +423,31 @@ func _process(_delta: float) -> void:
 		_mm_marker.global_position = Vector3(pos.x, 100.0, pos.z)
 		_mm_marker.rotation = Vector3(-PI / 2.0, 0, 0)
 		_mm_marker.global_rotation.y = main.actor_heading()
+
+
+func _update_mirrors() -> void:
+	var on: bool = main.car.mirrors_visible()
+	if on == _mirrors_shown:
+		return
+	_mirrors_shown = on
+	for key in _mirrors:
+		var frame: PanelContainer = _mirrors[key]
+		frame.visible = on
+		if on:
+			(frame.get_child(0) as TextureRect).texture = main.car.mirror_texture(key)
+	# Make room under the rearview mirror for the directions and messages.
+	_nav.offset_top = 132 if on else 16
+	_toasts.offset_top = 228 if on else 112
+
+
+func _update_police() -> void:
+	var tr: Traffic = main.traffic
+	var on := tr != null and tr.chaser != null
+	_police.visible = on
+	if on:
+		var flash := fmod(Time.get_ticks_msec() / 1000.0, 0.6) < 0.3
+		(_police.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = Color(0.65, 0.05, 0.05, 0.9) if flash else Color(0.05, 0.15, 0.6, 0.9)
+		_police_label.text = "POLICE: pull over and stop  (%s)" % tr.chase_reason
 
 
 func _fmt_money(v: float) -> String:
@@ -433,7 +543,6 @@ func show_menu(title: String, options: Array) -> void:
 	for o in options:
 		var b := Button.new()
 		b.text = o.text
-		b.focus_mode = Control.FOCUS_NONE
 		b.disabled = o.get("disabled", false)
 		b.add_theme_font_size_override("font_size", 17)
 		var cb: Callable = o.cb
@@ -442,14 +551,14 @@ func show_menu(title: String, options: Array) -> void:
 			cb.call())
 		_menu_list.add_child(b)
 	var close := Button.new()
-	close.text = "Close  (Esc)"
-	close.focus_mode = Control.FOCUS_NONE
+	close.text = "Close  (Esc / B)"
 	close.pressed.connect(close_menu)
 	_menu_list.add_child(close)
 	_menu.visible = true
 	menu_open = true
 	_menu.reset_size()
 	_menu.position = (_menu.get_viewport_rect().size - _menu.size) / 2.0
+	Game.pad_focus.call_deferred(_menu_list)
 	if main:
 		main.update_mouse_mode()
 

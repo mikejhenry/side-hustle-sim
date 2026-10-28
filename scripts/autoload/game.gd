@@ -25,6 +25,7 @@ var phone_service := true
 var home_id := "room"
 var evicted := false
 var fridge_meals := 0
+var phone_pro := false       # upgraded phone: shows police on the minimap, slower battery drain
 
 var car_id := "rustwagon"
 var fuel: float
@@ -48,6 +49,8 @@ var _passing_out := false
 
 
 func _ready() -> void:
+	# Keeps reading input while paused (gamepad detection); the clock checks for pause itself.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_input()
 	new_game()
 
@@ -64,6 +67,7 @@ func new_game() -> void:
 	home_id = "room"
 	evicted = false
 	fridge_meals = 1
+	phone_pro = false
 	car_id = "rustwagon"
 	var c: Dictionary = car()
 	fuel = c.tank * 0.4
@@ -82,7 +86,7 @@ func new_game() -> void:
 
 
 func _process(delta: float) -> void:
-	if time_paused or sleeping:
+	if time_paused or sleeping or get_tree().paused:
 		return
 	advance(delta * time_multiplier / GameData.REAL_SECONDS_PER_GAME_MINUTE)
 
@@ -168,7 +172,8 @@ func _update_needs(m: float, is_sleeping: bool, quality: float) -> void:
 		phone_battery = minf(100.0, phone_battery + GameData.PHONE_CHARGE * m)
 	else:
 		var online: bool = Gigs.any_online()
-		phone_battery = maxf(0.0, phone_battery - (GameData.PHONE_DRAIN_ONLINE if online else GameData.PHONE_DRAIN_IDLE) * m)
+		var drain: float = GameData.PHONE_DRAIN_ONLINE if online else GameData.PHONE_DRAIN_IDLE
+		phone_battery = maxf(0.0, phone_battery - drain * (0.6 if phone_pro else 1.0) * m)
 
 	_threshold_warn("hungry", hunger < 25.0, "You're getting hungry. Grab some food.", "warn")
 	_threshold_warn("starving", hunger <= 0.0, "You're starving! Your energy is draining fast.", "bad")
@@ -261,6 +266,28 @@ func _log(memo: String, amount: float) -> void:
 	transactions.push_front({"memo": memo, "amount": amount, "time": "%s %s" % [weekday(), time_string()]})
 	if transactions.size() > 30:
 		transactions.pop_back()
+
+
+## Traffic ticket: paid on the spot when you can afford it, otherwise it becomes a bill.
+func ticket(reason: String, amount: float) -> void:
+	stats["tickets"] = int(stats.get("tickets", 0)) + 1
+	if money >= amount:
+		spend(amount, "Ticket: " + reason)
+		notify("Ticket for %s: $%.0f, paid." % [reason, amount], "bad")
+	else:
+		_add_bill("Traffic ticket: " + reason, amount, day + GameData.BILL_CYCLE_DAYS, "ticket")
+		bills_changed.emit()
+		notify("Ticket for %s: $%.0f. You can't cover it, so it's a bill due in %d days." % [reason, amount, GameData.BILL_CYCLE_DAYS], "bad")
+
+
+func buy_phone_upgrade() -> bool:
+	if phone_pro:
+		return false
+	if not spend(GameData.PHONE_PRO_PRICE, GameData.PHONE_PRO_NAME):
+		return false
+	phone_pro = true
+	notify("New %s! Police now show on your map, and the battery lasts longer." % GameData.PHONE_PRO_NAME, "good")
+	return true
 
 
 # --- Bills ----------------------------------------------------------------------
@@ -472,7 +499,7 @@ func save_game() -> void:
 		"car_id": car_id, "fuel": fuel, "oil_life": oil_life, "tire_tread": tire_tread,
 		"engine_health": engine_health, "odometer": odometer, "bills": bills,
 		"transactions": transactions, "stats": stats, "bill_seq": _bill_seq,
-		"ratings": Gigs.ratings,
+		"ratings": Gigs.ratings, "phone_pro": phone_pro,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -501,6 +528,7 @@ func load_game() -> bool:
 	home_id = str(data.get("home_id", "room"))
 	evicted = bool(data.get("evicted", false))
 	fridge_meals = int(data.get("fridge_meals", 0))
+	phone_pro = bool(data.get("phone_pro", false))
 	car_id = str(data.get("car_id", "rustwagon"))
 	bills = data.get("bills", [])
 	for b in bills:
@@ -524,32 +552,79 @@ func load_game() -> bool:
 # --- Input map (set up in code so project.godot stays readable) -------------------
 
 func _setup_input() -> void:
-	_bind("move_forward", [KEY_W, KEY_UP])
-	_bind("move_back", [KEY_S, KEY_DOWN])
-	_bind("move_left", [KEY_A, KEY_LEFT])
-	_bind("move_right", [KEY_D, KEY_RIGHT])
-	_bind("sprint", [KEY_SHIFT])
-	_bind("jump", [KEY_SPACE])
-	_bind("handbrake", [KEY_SPACE])
-	_bind("interact", [KEY_E])
-	_bind("phone", [KEY_TAB, KEY_P])
-	_bind("horn", [KEY_H])
-	_bind("reset_car", [KEY_R])
-	_bind("headlights", [KEY_L])
-	_bind("camera_toggle", [KEY_C])
-	_bind("help", [KEY_F1])
+	# Keyboard keys, then gamepad buttons and stick/trigger directions (Xbox layout names).
+	_bind("move_forward", [KEY_W, KEY_UP], [], [[JOY_AXIS_LEFT_Y, -1.0]])
+	_bind("move_back", [KEY_S, KEY_DOWN], [], [[JOY_AXIS_LEFT_Y, 1.0]])
+	_bind("move_left", [KEY_A, KEY_LEFT], [], [[JOY_AXIS_LEFT_X, -1.0]])
+	_bind("move_right", [KEY_D, KEY_RIGHT], [], [[JOY_AXIS_LEFT_X, 1.0]])
+	_bind("throttle", [], [], [[JOY_AXIS_TRIGGER_RIGHT, 1.0]])
+	_bind("brake_reverse", [], [], [[JOY_AXIS_TRIGGER_LEFT, 1.0]])
+	_bind("look_left", [], [], [[JOY_AXIS_RIGHT_X, -1.0]])
+	_bind("look_right", [], [], [[JOY_AXIS_RIGHT_X, 1.0]])
+	_bind("look_up", [], [], [[JOY_AXIS_RIGHT_Y, -1.0]])
+	_bind("look_down", [], [], [[JOY_AXIS_RIGHT_Y, 1.0]])
+	_bind("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
+	_bind("jump", [KEY_SPACE], [JOY_BUTTON_A])
+	_bind("handbrake", [KEY_SPACE], [JOY_BUTTON_A])
+	_bind("interact", [KEY_E], [JOY_BUTTON_X])
+	_bind("phone", [KEY_TAB, KEY_P], [JOY_BUTTON_Y])
+	_bind("back", [], [JOY_BUTTON_B])
+	_bind("horn", [KEY_H], [JOY_BUTTON_RIGHT_STICK])
+	_bind("reset_car", [KEY_R], [JOY_BUTTON_DPAD_DOWN])
+	_bind("headlights", [KEY_L], [JOY_BUTTON_RIGHT_SHOULDER])
+	_bind("camera_toggle", [KEY_C], [JOY_BUTTON_LEFT_SHOULDER])
+	_bind("mirrors", [KEY_M], [JOY_BUTTON_DPAD_UP])
+	_bind("help", [KEY_F1], [JOY_BUTTON_BACK])
 	_bind("save_game", [KEY_F5])
 	_bind("load_game", [KEY_F9])
 	_bind("time_warp", [KEY_F7])
 	_bind("cheat_money", [KEY_F8])
 	_bind("graphics", [KEY_F3])
-	_bind("pause", [KEY_ESCAPE])
+	_bind("pause", [KEY_ESCAPE], [JOY_BUTTON_START])
 
 
-func _bind(action: String, keys: Array) -> void:
+func _bind(action: String, keys: Array, buttons: Array = [], axes: Array = []) -> void:
 	if not InputMap.has_action(action):
-		InputMap.add_action(action)
+		InputMap.add_action(action, 0.25)
 	for k in keys:
 		var ev := InputEventKey.new()
 		ev.physical_keycode = k
 		InputMap.action_add_event(action, ev)
+	for b in buttons:
+		var jb := InputEventJoypadButton.new()
+		jb.button_index = b
+		InputMap.action_add_event(action, jb)
+	for a in axes:
+		var jm := InputEventJoypadMotion.new()
+		jm.axis = a[0]
+		jm.axis_value = a[1]
+		InputMap.action_add_event(action, jm)
+
+
+# --- Gamepad / keyboard detection ---------------------------------------------------
+# Menus get a highlighted (focused) button only while you're using a gamepad, so the
+# keyboard's Space and Enter never press a phone button by accident.
+
+var using_pad := false
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.5):
+		using_pad = true
+	elif event is InputEventKey or event is InputEventMouseButton:
+		if using_pad:
+			using_pad = false
+		var vp := get_viewport()
+		if vp and vp.gui_get_focus_owner() and event is InputEventKey:
+			vp.gui_release_focus()
+
+
+## Focus the first enabled button under `root` when a gamepad is in use.
+func pad_focus(root: Node, index := 0) -> void:
+	if not using_pad or root == null:
+		return
+	var buttons := root.find_children("*", "BaseButton", true, false).filter(
+		func(b): return b.is_visible_in_tree() and not b.disabled)
+	if buttons.is_empty():
+		return
+	(buttons[clampi(index, 0, buttons.size() - 1)] as Control).grab_focus()

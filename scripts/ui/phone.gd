@@ -47,6 +47,7 @@ func _ready() -> void:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
 	col.add_child(scroll)
 	_screen = VBoxContainer.new()
 	_screen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -129,11 +130,15 @@ func _lbl(parent: Node, text: String, size := 16, color := Color.WHITE) -> Label
 func _btn(parent: Node, text: String, cb: Callable, color := Color(0.2, 0.2, 0.24)) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
-	for state in ["normal", "hover", "pressed", "disabled"]:
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var s := StyleBoxFlat.new()
 		s.bg_color = color.lightened(0.12) if state == "hover" else (color.darkened(0.3) if state == "disabled" else color)
+		if state == "focus":
+			# Gamepad highlight: outline only, drawn over the normal look.
+			s.draw_center = false
+			s.set_border_width_all(3)
+			s.border_color = Color(1, 0.85, 0.3)
 		s.set_corner_radius_all(10)
 		s.content_margin_top = 8
 		s.content_margin_bottom = 8
@@ -185,7 +190,19 @@ func _header(title: String, color: Color, sub := "") -> void:
 # --- Screens ------------------------------------------------------------------
 
 func _rebuild() -> void:
+	# Keep the gamepad highlight on the same button when the screen refreshes.
+	var focus_index := 0
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused and _body.is_ancestor_of(focused):
+		focus_index = _body.find_children("*", "BaseButton", true, false).filter(
+			func(b): return b.is_visible_in_tree() and not b.disabled).find(focused)
+	_build_screen()
+	Game.pad_focus.call_deferred(_body, maxi(focus_index, 0))
+
+
+func _build_screen() -> void:
 	for c in _screen.get_children():
+		_screen.remove_child(c)
 		c.queue_free()
 	_live.clear()
 	if not Game.phone_service and current_app in GameData.APPS:
@@ -406,6 +423,16 @@ func _me() -> void:
 	_lbl(naps, "Sleep in your car (poor quality). Must be parked.", 13, Color(0.8, 0.8, 0.85))
 	_live_button(naps, "Nap in car (2 hours)", func(): main.sleep_in_car(2.0), func(): return main.is_driving() and main.car_speed() < 1.0, Color(0.3, 0.25, 0.45))
 	_live_button(naps, "Sleep in car until 6 AM", func(): main.sleep_in_car(Game.hours_until(6)), func(): return main.is_driving() and main.car_speed() < 1.0, Color(0.3, 0.25, 0.45))
+	var up := _card(Color(0.16, 0.14, 0.2))
+	if Game.phone_pro:
+		_lbl(up, "📱 %s" % GameData.PHONE_PRO_NAME, 16, Color(0.8, 0.9, 1))
+		_lbl(up, "Police near you show on your map as blue COP badges (red when they're after you). Battery lasts 40% longer.", 12, Color(0.75, 0.75, 0.8))
+	else:
+		_lbl(up, "Upgrade: %s" % GameData.PHONE_PRO_NAME, 16, Color(0.8, 0.9, 1))
+		_lbl(up, "Comes with Wayz Pro: police near you show up on your map. Bigger battery too.", 12, Color(0.75, 0.75, 0.8))
+		_live_button(up, "Buy for $%.0f" % GameData.PHONE_PRO_PRICE, func():
+			if Game.buy_phone_upgrade():
+				_rebuild(), func(): return Game.money >= GameData.PHONE_PRO_PRICE, Color(0.25, 0.35, 0.6))
 	var sv := _card()
 	_btn(sv, "Save game (F5)", func(): Game.save_game())
 	_btn(sv, "Load game (F9)", func(): main.load_game())

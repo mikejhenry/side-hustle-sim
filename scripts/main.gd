@@ -17,6 +17,9 @@ var driving := false
 var map_waypoint: Dictionary = {}
 var gps: GPS
 var traffic: Traffic
+var pause_menu: PauseMenu
+var tutorial: Tutorial
+var auto_tutorial := true     # tests turn this off
 var _gps_timer := 0.0
 
 var _current: Interactable = null
@@ -63,12 +66,25 @@ func _ready() -> void:
 	traffic.main = self
 	add_child(traffic)
 	traffic.build()
+	tutorial = Tutorial.new()
+	tutorial.main = self
+	add_child(tutorial)
+	pause_menu = PauseMenu.new()
+	pause_menu.main = self
+	add_child(pause_menu)
 
 	player.set_active(true)
 	Game.home_changed.connect(_on_home_changed)
 	update_mouse_mode()
-	hud.toast("Welcome to New Castlewood County! Press F1 for controls. Tab opens your phone.", "info")
-	hud.toast("Rent is due in 3 days and your Rustwagon needs an oil change. Time to hustle.", "warn")
+	if auto_tutorial and not Tutorial.is_done():
+		tutorial.start()
+	else:
+		hud.toast("Welcome to New Castlewood County! Press F1 for controls. Tab opens your phone.", "info")
+		hud.toast("Rent is due in 3 days and your Rustwagon needs an oil change. Time to hustle.", "warn")
+
+
+func start_tutorial() -> void:
+	tutorial.start()
 
 
 func _build_environment() -> void:
@@ -250,6 +266,8 @@ func _process(delta: float) -> void:
 	var t := Gigs.target()
 	if t.is_empty():
 		t = map_waypoint
+	if t.is_empty():
+		t = tutorial.target()
 	beacon.visible = not t.is_empty()
 	var obj := Gigs.status_text()
 	if not t.is_empty():
@@ -261,6 +279,10 @@ func _process(delta: float) -> void:
 	hud.set_objective(obj)
 	_update_gps(delta, t)
 	_update_sky()
+	# With a gamepad, the stick and A button drive the phone's menus, not the character.
+	var locked: bool = hud.menu_open or (phone.is_open and Game.using_pad)
+	player.input_locked = locked
+	car.input_locked = locked
 
 
 func _update_gps(delta: float, t: Dictionary) -> void:
@@ -326,15 +348,18 @@ func _input(event: InputEvent) -> void:
 		if not hud.menu_open:
 			phone.toggle()
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("pause"):
+	elif event.is_action_pressed("pause") or event.is_action_pressed("back"):
 		if hud.menu_open:
 			hud.close_menu()
 		elif phone.is_open:
-			phone.close()
+			if event.is_action_pressed("back") and phone.current_app != "":
+				phone.open_app("")
+			else:
+				phone.close()
 		elif hud.help_open:
 			hud.toggle_help()
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		elif event.is_action_pressed("pause"):
+			pause_menu.open()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("help"):
 		hud.toggle_help()
@@ -353,6 +378,9 @@ func _input(event: InputEvent) -> void:
 		car.toggle_camera()
 	elif event.is_action_pressed("headlights") and driving:
 		car.set_headlights(not car.headlights_on)
+	elif event.is_action_pressed("mirrors") and driving:
+		car.mirrors_enabled = not car.mirrors_enabled
+		hud.toast("Mirrors %s (M)" % ("on" if car.mirrors_enabled else "off"), "info")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -361,12 +389,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_current.use()
 		elif driving:
 			exit_car()
-	elif event is InputEventMouseButton and event.pressed and not phone.is_open and not hud.menu_open:
+	elif event is InputEventMouseButton and event.pressed and not phone.is_open and not hud.menu_open and not pause_menu.is_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func update_mouse_mode() -> void:
-	var free := phone.is_open or hud.menu_open
+	var free: bool = phone.is_open or hud.menu_open or (pause_menu != null and pause_menu.is_open)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if free else Input.MOUSE_MODE_CAPTURED
 	player.input_locked = hud.menu_open
 	car.input_locked = hud.menu_open

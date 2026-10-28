@@ -21,7 +21,9 @@ func frames(n: int) -> void:
 
 func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
+	main.auto_tutorial = false
 	add_child(main)
+	main.traffic.police_enabled = false
 	await frames(30)
 	var town = main.town
 	print("World")
@@ -101,6 +103,8 @@ func _ready() -> void:
 	var gap_now: float = ai.global_position.distance_to(main.car.global_position)
 	check(ai.speed < 0.5 and gap_now > 4.0, "traffic stops for your car (gap %.1f m, speed %.1f)" % [gap_now, ai.speed])
 	main.car.teleport(main.town.car_spawn)
+	await _police_tests(tr)
+	await _ui_tests()
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -156,11 +160,11 @@ func _ready() -> void:
 	Gigs.accept(o.id)
 	car.teleport(Transform3D(Basis.IDENTITY, Gigs.job.pickup.curb + Vector3(0, 0.8, 0)))
 	main.enter_car()
-	await frames(30)
+	await frames(60)
 	check(Gigs.can_start_trip(), "can start trip at pickup")
 	Gigs.start_trip()
 	car.teleport(Transform3D(Basis.IDENTITY, Gigs.job.dropoff.curb + Vector3(0, 0.8, 0)))
-	await frames(30)
+	await frames(60)
 	check(Gigs.can_end_trip(), "can end trip at dropoff")
 	money0 = Game.money
 	Gigs.end_trip()
@@ -178,7 +182,7 @@ func _ready() -> void:
 		Game.minute = 9 * 60.0 + 45.0
 		car.teleport(Transform3D(Basis.IDENTITY, town.station.load_point + Vector3(0, 0.8, 0)))
 		main.enter_car()
-		await frames(10)
+		await frames(60)
 		check(Gigs.can_scan(), "can scan at station")
 		Gigs.scan_packages()
 		main.exit_car()
@@ -220,6 +224,95 @@ func _ready() -> void:
 	await frames(10)
 	print("\n%s: %d failure(s)" % ["PASSED" if failures == 0 else "FAILED", failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+
+func _police_tests(tr: Traffic) -> void:
+	print("Police")
+	check(tr.cops.size() == Traffic.COP_COUNT, "police cars: %d" % tr.cops.size())
+	var car = main.car
+	main.enter_car()
+	await frames(5)
+	check(car.mirrors_visible(), "mirrors on in first person")
+	await frames(10)
+	check(main.hud._mirrors.rear.visible and main.hud._mirrors.left.visible, "HUD shows mirrors")
+	check(car.mirror_texture("rear") != null, "rearview has a texture")
+	car.toggle_camera()
+	await frames(2)
+	check(not main.hud._mirrors.rear.visible, "mirrors hidden in chase camera")
+	car.toggle_camera()
+	tr.police_enabled = true
+	var cop = tr.cops[0]
+	var fwd: Vector3 = cop.global_basis.z
+	# Speeding behind the cop: it can't see you.
+	await _speed_past(car, cop.global_position - fwd * 22.0, -fwd, 30)
+	check(tr.chaser == null, "cop doesn't see you speeding behind it")
+	# Speeding in front of it: chase.
+	fwd = cop.global_basis.z
+	await _speed_past(car, cop.global_position + fwd * 22.0, fwd, 45)
+	check(tr.chaser == cop, "cop sees you speeding in front of it and gives chase (%s)" % tr.chase_reason)
+	check(main.hud._police.visible, "HUD shows the pull-over alert")
+	var tickets0: int = int(Game.stats.get("tickets", 0))
+	var money0: float = Game.money
+	var bills0: int = Game.unpaid_bills().size()
+	car.linear_velocity = Vector3.ZERO
+	var waited := 0
+	while tr.chaser != null and waited < 900:
+		await frames(1)
+		waited += 1
+	print("  cop reached you in %.1f s, %.1f m away" % [waited / 60.0, cop.global_position.distance_to(car.global_position)])
+	check(int(Game.stats.get("tickets", 0)) == tickets0 + 1, "pulling over gets you a ticket")
+	check(Game.money < money0 or Game.unpaid_bills().size() > bills0, "ticket costs money ($%.2f -> $%.2f)" % [money0, Game.money])
+	check(cop.mode == "return", "cop heads back to patrol")
+	var back := 0
+	while cop.mode != "patrol" and back < 1200:
+		await frames(1)
+		back += 1
+	check(cop.mode == "patrol", "cop rejoins traffic (%.1f s)" % (back / 60.0))
+	tr.police_enabled = false
+	main.car.teleport(main.town.car_spawn)
+	await frames(3)
+	main.exit_car()
+	# Phone upgrade shows police on the minimap.
+	check(not cop.marker.visible, "no cop markers with the stock phone")
+	Game.money += 500.0
+	check(Game.buy_phone_upgrade() and Game.phone_pro, "bought the phone upgrade")
+	await frames(2)
+	check(cop.marker.visible and cop.marker.get_child(0).layers == 2, "cop markers on the minimap")
+
+
+func _speed_past(car, pos: Vector3, dir: Vector3, n: int) -> void:
+	car.teleport(Transform3D(Basis.looking_at(-dir, Vector3.UP), pos + Vector3(0, 0.6, 0)))
+	for i in n:
+		car.linear_velocity = dir * 20.0
+		await frames(1)
+
+
+func _ui_tests() -> void:
+	print("Pause menu and tutorial")
+	main.pause_menu.open()
+	check(get_tree().paused and main.pause_menu.is_open, "pause menu pauses the game")
+	main.pause_menu.close()
+	check(not get_tree().paused, "resume")
+	check(InputMap.action_get_events("interact").any(func(e): return e is InputEventJoypadButton), "gamepad bound")
+	var tut: Tutorial = main.tutorial
+	main.start_tutorial()
+	check(tut.active and tut.step == 0, "tutorial starts")
+	main.player.global_position += Vector3(6, 0, 0)
+	await frames(45)
+	check(tut.step == 1, "tutorial: walking done")
+	main.phone.open()
+	await frames(45)
+	check(tut.step == 2, "tutorial: phone opened")
+	main.phone.close()
+	await frames(45)
+	check(tut.step == 3 and not tut.target().is_empty(), "tutorial: heading to the car")
+	for i in range(3, tut._steps.size()):
+		tut._go(i)
+		check(tut._body.text != "", "tutorial step %d: %s" % [i + 1, tut._steps[i].title])
+		if i >= 4 and i <= 10:
+			check(not tut.target().is_empty(), "  has a GPS target: %s" % tut.target().get("label", ""))
+	tut.finish(true)
+	check(not tut.active, "tutorial skipped")
 
 
 ## Teleports the player next to the closest interactable whose prompt contains `text`
