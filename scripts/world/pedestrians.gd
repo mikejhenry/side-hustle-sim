@@ -6,7 +6,7 @@ extends Node3D
 
 const COUNT := 12
 const INSET := 9.2           # sidewalk path, meters from the road center line
-const MODELS := ["Casual2", "Suit"]
+const MODELS := ["Casual2", "Suit", "Casual", "Worker"]
 
 var town: Node = null
 var main: Node = null
