@@ -14,7 +14,7 @@ port-side warehouse district, and the I-95 Beltway wrapping it all. Every brand 
 
 ## Running it
 
-1. Install **Godot 4.3 or newer** (standard build, not .NET): https://godotengine.org/download
+1. Install **Godot 4.7** (standard build, not .NET; 4.3+ also works): https://godotengine.org/download
 2. Open Godot, click **Import**, and pick this folder's `project.godot`.
 3. Press **F5** (or the Play button).
 
@@ -88,6 +88,7 @@ docs/DESIGN.md            Design doc and roadmap
 ## Tests
 
 ```
+godot --headless --path . --import
 godot --headless --path . res://tests/smoke_test.tscn
 ```
 
