@@ -304,6 +304,27 @@ static func tree(parent: Node, pos: Vector3, scale := 1.0, leaf_tint := Color(0.
 		s.scale = Vector3(1.0, 0.85, 1.0)
 
 
+static func _name_has_any(n: String, list: String) -> bool:
+	for part in list.split(","):
+		if part.strip_edges() in n:
+			return true
+	return false
+
+
+## A solid invisible box to bump into (for props whose meshes have no collision).
+static func collider(parent: Node, size: Vector3, pos: Vector3, rot_y := 0.0) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.position = pos
+	body.rotation.y = rot_y
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	cs.shape = shape
+	body.add_child(cs)
+	parent.add_child(body)
+	return body
+
+
 static func bush(parent: Node, pos: Vector3, scale := 1.0) -> void:
 	if ResourceLoader.exists("res://assets/quaternius/Bush_1.fbx"):
 		var b: Node3D = load("res://assets/quaternius/Bush_1.fbx").instantiate()
@@ -319,7 +340,11 @@ static func bush(parent: Node, pos: Vector3, scale := 1.0) -> void:
 ## Places a Poly Haven model (assets/models/<name>/<name>.gltf). Variant meshes whose names
 ## contain `drop` (for example "rust" or "aged") are removed, and the rest is centered on
 ## `pos` with its base on the ground. These are real scanned props (CC0).
-static func prop(parent: Node, name: String, pos: Vector3, rot_y := 0.0, drop := "", scale := 1.0) -> Node3D:
+## `keep`: only meshes whose names contain one of these (comma separated). `vis`: stop
+## drawing it past this many meters (small props and interiors don't need to be seen from
+## across town, which keeps the Iris Xe fast).
+static func prop(parent: Node, name: String, pos: Vector3, rot_y := 0.0, drop := "", scale := 1.0,
+		keep := "", vis := 0.0) -> Node3D:
 	var root := Node3D.new()
 	root.position = pos
 	root.rotation.y = rot_y
@@ -331,9 +356,13 @@ static func prop(parent: Node, name: String, pos: Vector3, rot_y := 0.0, drop :=
 	var first := true
 	for n in model.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
-		if drop != "" and drop in String(mi.name):
+		if drop != "" and drop in String(mi.name) or keep != "" and not _name_has_any(String(mi.name), keep):
+			mi.get_parent().remove_child(mi)
 			mi.queue_free()
 			continue
+		if vis > 0.0:
+			mi.visibility_range_end = vis
+			mi.visibility_range_end_margin = 2.0
 		var ab: AABB = (model.global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb() if mi.is_inside_tree() else mi.transform * mi.get_aabb()
 		box = ab if first else box.merge(ab)
 		first = false

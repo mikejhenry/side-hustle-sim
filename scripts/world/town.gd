@@ -151,6 +151,11 @@ func _street_props() -> void:
 			if (kx + kz) % 2 == 0:
 				var p := Vector3(kx * B - ROAD_W / 2.0 - 1.2, 0.12, kz * B + ROAD_W / 2.0 + 1.2)
 				Kit.prop(self, "fire_hydrant", p, PI / 4.0, "aged")
+			elif (kx * 3 + kz) % 4 == 1:
+				# Traffic signal cabinets on some corners.
+				var p2 := Vector3(kx * B - ROAD_W / 2.0 - 1.4, 0.12, kz * B - ROAD_W / 2.0 - 1.4)
+				Kit.prop(self, "utility_box_02", p2, PI / 4.0, "", 1.0, "", 80.0)
+				Kit.collider(self, Vector3(0.95, 1.1, 0.45), p2 + Vector3(0, 0.55, 0), PI / 4.0)
 
 
 func set_night(on: bool) -> void:
@@ -497,6 +502,37 @@ func _shop(lot: Node3D, shop_name: String, size: Vector3, color: Color, setback 
 	return b
 
 
+## A row of steel shelving, back to back, stocked with boxes of groceries. `units` shelves
+## per side, centered on `center`, running along X.
+func _aisle(b: Node3D, center: Vector3, units: int) -> void:
+	var w := 1.097
+	var aisle_len := w * units
+	Kit.collider(b, Vector3(aisle_len, 2.1, 1.1), center + Vector3(0, 1.05, 0))
+	var colors := [Color(0.72, 0.25, 0.2), Color(0.85, 0.72, 0.35), Color(0.3, 0.45, 0.65), Color(0.88, 0.87, 0.82),
+		Color(0.35, 0.55, 0.3), Color(0.55, 0.35, 0.2), Color(0.9, 0.55, 0.2), Color(0.5, 0.3, 0.5)]
+	var stock := []
+	for c in colors:
+		stock.append([])
+	for side in [-1.0, 1.0]:
+		for u in units:
+			var x := center.x - aisle_len / 2.0 + w * (u + 0.5)
+			Kit.prop(b, "steel_frame_shelves_01", Vector3(x, 0, center.z + side * 0.27), 0.0 if side > 0 else PI, "", 0.1, "", 40.0)
+			for level in 4:
+				for k in 3:
+					var h := _rng.randf_range(0.18, 0.32)
+					var y := 0.13 + level * 0.43 + h / 2.0
+					var p := Vector3(x - 0.34 + k * 0.34, y, center.z + side * 0.3)
+					stock[_rng.randi() % colors.size()].append(Transform3D(Basis.IDENTITY.scaled(Vector3(1, h / 0.25, 1)), p))
+	for i in colors.size():
+		var mm := Kit.multibox(b, Vector3(0.28, 0.25, 0.3), stock[i], colors[i])
+		mm.visibility_range_end = 40.0
+
+
+## A cash register (scanned) on a counter top.
+func _register(b: Node3D, pos: Vector3, rot_y := 0.0) -> void:
+	Kit.prop(b, "CashRegister_01", pos, rot_y, "", 1.0, "", 35.0)
+
+
 func _counter(b: Node3D, pos: Vector3, width: float, color := Color(0.5, 0.35, 0.25)) -> void:
 	Kit.box(b, Vector3(width, 1.05, 0.8), pos + Vector3(0, 0.525, 0), color)
 	Kit.box(b, Vector3(width + 0.1, 0.06, 0.9), pos + Vector3(0, 1.08, 0), Color(0.85, 0.85, 0.82))
@@ -524,8 +560,12 @@ func _restaurant(lot: Node3D, rname: String, color: Color) -> void:
 	Kit.label(b, "MOBILE PICKUP", Vector3(2.8, 2.6, cz - 1.45), 80, Color(0.6, 1, 0.7))
 	for i in 3:
 		Kit.box(b, Vector3(0.5, 0.35, 0.4), Vector3(2.0 + i * 0.7, 1.28, cz), Color(0.7, 0.55, 0.35), false)
+	_register(b, Vector3(-2.5, 1.11, cz), PI)
+	# Tables with two chairs each.
 	for t in [Vector3(-4, 0, 2), Vector3(4, 0, 2), Vector3(-4, 0, 5), Vector3(4, 0, 5)]:
-		Kit.box(b, Vector3(1.4, 0.8, 1.4), t + Vector3(0, 0.4, 0), Color(0.6, 0.45, 0.3))
+		Kit.prop(b, "outdoor_table_chair_set_01", t, PI / 2.0, "", 1.15, "", 35.0)
+		Kit.collider(b, Vector3(2.0, 0.9, 0.9), t + Vector3(0, 0.45, 0))
+	Kit.prop(b, "potted_plant_04", Vector3(-size.x / 2.0 + 0.8, 0, size.z / 2.0 - 1.2), 0.0, "", 3.5, "", 35.0)
 	var menu: Array = GameData.RESTAURANTS.get(rname, [])
 	Kit.interactable(b, Vector3(-2.5, 1, cz + 1.1), 2.0,
 		func(): return "Order food" if not menu.is_empty() else "",
@@ -559,7 +599,7 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 	var idx := 0
 	for row in 3:
 		var z := -9.0 + row * 6.0
-		Kit.box(b, Vector3(22, 2.0, 1.2), Vector3(4, 1.0, z), Color(0.82, 0.82, 0.8))
+		_aisle(b, Vector3(4, 0, z), 20)
 		for face in [-1.0, 1.0]:
 			for k in 3:
 				if idx >= items.size():
@@ -568,8 +608,8 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 				idx += 1
 				var x := -4.0 + k * 8.0
 				var pos := Vector3(x, 0, z + face * 1.1)
-				Kit.box(b, Vector3(2.5, 0.5, 0.15), Vector3(x, 1.6, z + face * 0.62), Color(_rng.randf(), _rng.randf(), _rng.randf()).lerp(Color.WHITE, 0.3), false)
-				Kit.label(b, item, pos + Vector3(0, 2.3, 0), 64, Color(1, 1, 0.8), true)
+				Kit.box(b, Vector3(2.5, 0.4, 0.1), Vector3(x, 2.4, z + face * 0.3), Color(_rng.randf(), _rng.randf(), _rng.randf()).lerp(Color.WHITE, 0.3), false)
+				Kit.label(b, item, pos + Vector3(0, 2.95, 0), 64, Color(1, 1, 0.8), true)
 				Kit.interactable(b, pos + Vector3(0, 1, 0), 1.6,
 					func():
 						var j := Gigs.job
@@ -582,6 +622,13 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 	var rz := size.z / 2.0 - 5.0
 	_counter(b, Vector3(-14, 0, rz), 3.0, Color(0.3, 0.3, 0.35))
 	_counter(b, Vector3(-8, 0, rz), 3.0, Color(0.3, 0.3, 0.35))
+	for x in [-14.0, -8.0]:
+		_register(b, Vector3(x + 0.8, 1.11, rz), PI)
+	# Crates of produce by the door and a wet floor sign by the restroom.
+	for i in 3:
+		for k in 2:
+			Kit.prop(b, "plastic_crate_02", Vector3(8.0 + i * 0.6, 0.02 + k * 0.25, size.z / 2.0 - 2.0), 0.0, "", 1.0, "", 35.0)
+	Kit.prop(b, "WetFloorSign_01", Vector3(-size.x / 2.0 + 3.0, 0, -size.z / 2.0 + 2.5), 0.4, "", 1.3, "", 35.0)
 	Kit.label(b, "INSTACRATE\nCHECKOUT", Vector3(-14, 2.6, rz), 44, Color(1, 0.8, 0.3), true)
 	Kit.label(b, "REGISTER", Vector3(-8, 2.6, rz), 44, Color.WHITE, true)
 	Kit.interactable(b, Vector3(-14, 1, rz - 1.0), 2.0,
@@ -638,6 +685,7 @@ func _gas_station(lot: Node3D) -> void:
 	# Mini mart
 	var b := _shop(lot, "WahWah Market", Vector3(14, 4, 10), Color(0.9, 0.9, 0.85), 20.0)
 	_counter(b, Vector3(0, 0, -2.5), 6.0)
+	_register(b, Vector3(1.5, 1.11, -2.5), PI)
 	Kit.label(b, "Hoagies  Coffee  Snacks", Vector3(0, 2.8, -4.7), 44, Color(0.75, 0.1, 0.1))
 	Kit.interactable(b, Vector3(0, 1, -1.4), 2.0,
 		func(): return "Buy snacks & coffee",

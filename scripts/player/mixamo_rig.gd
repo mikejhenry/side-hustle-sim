@@ -55,20 +55,10 @@ func _build(scene: Node3D) -> void:
 	for node in skeleton.find_children("*", "MeshInstance3D", true, false):
 		var m := node as MeshInstance3D
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		# Mixamo exports its materials 80% see-through: make them solid (eyelashes keep a
-		# cut-out edge so they don't render as dark blocks).
+		# Mixamo exports its materials 80% see-through. Build fresh, fully solid materials
+		# from their textures (eyelashes keep a cut-out edge so they aren't dark blocks).
 		for i in m.mesh.get_surface_count():
-			var mat := m.get_active_material(i) as BaseMaterial3D
-			if mat == null:
-				continue
-			mat = mat.duplicate()
-			mat.albedo_color.a = 1.0
-			if m.name.containsn("lash"):
-				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-				mat.alpha_scissor_threshold = 0.5
-			else:
-				mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-			m.set_surface_override_material(i, mat)
+			m.set_surface_override_material(i, _solid(m.get_active_material(i), m.name.containsn("lash")))
 	# Our own player, with the clips from the other files (they share the skeleton).
 	for old in scene.find_children("*", "AnimationPlayer", true, false):
 		old.get_parent().remove_child(old)
@@ -95,6 +85,33 @@ func _build(scene: Node3D) -> void:
 	_tree.root_node = _tree.get_path_to(scene)
 	_tree.tree_root = _blend_tree()
 	_tree.active = true
+
+
+func _solid(src: Material, cutout: bool) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	var base := src as BaseMaterial3D
+	if base:
+		mat.albedo_texture = base.albedo_texture
+		var c := base.albedo_color
+		mat.albedo_color = Color(c.r, c.g, c.b, 1.0)
+		mat.normal_enabled = base.normal_enabled
+		mat.normal_texture = base.normal_texture
+		mat.normal_scale = base.normal_scale
+		mat.roughness = base.roughness
+		mat.roughness_texture = base.roughness_texture
+		mat.metallic = base.metallic
+		mat.metallic_texture = base.metallic_texture
+	else:
+		push_warning("MixamoRig: unexpected material %s" % src)
+		mat.albedo_color = Color(0.8, 0.7, 0.6)
+	if cutout:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		mat.alpha_scissor_threshold = 0.5
+	else:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	mat.cull_mode = BaseMaterial3D.CULL_BACK
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY
+	return mat
 
 
 ## Keep the clip in place: the hips may bob and crouch but not travel. For the jump, the

@@ -15,7 +15,10 @@ static func build(kind: String) -> Node3D:
 	root.name = "Carry_" + kind
 	match kind:
 		"parcel":
-			# Box centered between the palms.
+			# A scanned cardboard box (Poly Haven), centered between the palms.
+			if ResourceLoader.exists("res://assets/models/cardboard_box_01/cardboard_box_01.gltf"):
+				Kit.prop(root, "cardboard_box_01", Vector3(0, -0.17, 0))
+				return root
 			Kit.box(root, Vector3(0.4, 0.3, 0.32), Vector3.ZERO, Color(0.72, 0.55, 0.36), false)
 			Kit.box(root, Vector3(0.405, 0.305, 0.07), Vector3.ZERO, Color(0.85, 0.75, 0.55), false)    # tape
 			Kit.box(root, Vector3(0.16, 0.002, 0.1), Vector3(0.08, 0.152, 0.06), Color(0.95, 0.95, 0.95), false)  # label
