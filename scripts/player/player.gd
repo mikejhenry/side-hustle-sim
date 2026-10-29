@@ -41,7 +41,10 @@ func _ready() -> void:
 
 	_model = Node3D.new()
 	add_child(_model)
-	_human = Humanoid.create("Casual2")
+	# The Mixamo character if its files are in assets/mixamo, else the Quaternius one.
+	_human = MixamoRig.create_rig()
+	if _human == null:
+		_human = Humanoid.create("Casual2")
 	if _human:
 		_model.add_child(_human)
 	else:
