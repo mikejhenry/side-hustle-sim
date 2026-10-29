@@ -52,8 +52,23 @@ func _build(scene: Node3D) -> void:
 	skeleton = found[0]
 	var hips_name := skeleton.get_bone_name(0)
 	_prefix = hips_name.substr(0, hips_name.length() - "Hips".length())
-	for m in skeleton.find_children("*", "MeshInstance3D", true, false):
-		(m as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	for node in skeleton.find_children("*", "MeshInstance3D", true, false):
+		var m := node as MeshInstance3D
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		# Mixamo exports its materials 80% see-through: make them solid (eyelashes keep a
+		# cut-out edge so they don't render as dark blocks).
+		for i in m.mesh.get_surface_count():
+			var mat := m.get_active_material(i) as BaseMaterial3D
+			if mat == null:
+				continue
+			mat = mat.duplicate()
+			mat.albedo_color.a = 1.0
+			if m.name.containsn("lash"):
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				mat.alpha_scissor_threshold = 0.5
+			else:
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			m.set_surface_override_material(i, mat)
 	# Our own player, with the clips from the other files (they share the skeleton).
 	for old in scene.find_children("*", "AnimationPlayer", true, false):
 		old.get_parent().remove_child(old)
