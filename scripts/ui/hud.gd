@@ -447,6 +447,8 @@ func _process(_delta: float) -> void:
 
 func _update_mirrors() -> void:
 	var on: bool = main.car.hud_mirrors()
+	if on:
+		_place_mirrors()
 	# Checked against the real state every frame, so the overlays can't get stuck hidden.
 	if on == _mirrors_shown and _mirrors.rear.visible == on:
 		return
@@ -459,6 +461,30 @@ func _update_mirrors() -> void:
 	# Make room under the rearview mirror for the directions and messages.
 	_nav.offset_top = 132 if on else 16
 	_toasts.offset_top = 228 if on else 112
+
+
+## The on-screen mirrors sit over the car's own mirrors (wherever they are on this car and
+## wherever you're looking), enlarged, and kept inside the screen.
+func _place_mirrors() -> void:
+	var cam: Camera3D = main.car.fp_camera
+	var view := get_viewport().get_visible_rect().size
+	for key in _mirrors:
+		var frame: PanelContainer = _mirrors[key]
+		frame.anchor_left = 0.0
+		frame.anchor_right = 0.0
+		frame.anchor_top = 0.0
+		frame.anchor_bottom = 0.0
+		var fsize := frame.get_combined_minimum_size()
+		var world: Vector3 = main.car.mirror_glass_position(key)
+		var at := Vector2(view.x / 2.0, 80.0)
+		if not cam.is_position_behind(world):
+			at = cam.unproject_position(world)
+		var pos := at - fsize / 2.0
+		# The rearview stays clear of the stats (top left) and the minimap (top right).
+		var top := 12.0 if key == "rear" else 250.0
+		pos.x = clampf(pos.x, 12.0 if key != "rear" else 330.0, view.x - fsize.x - (12.0 if key != "rear" else 260.0))
+		pos.y = clampf(pos.y, top, view.y - fsize.y - 140.0)
+		frame.position = pos.round()
 
 
 func _update_police() -> void:

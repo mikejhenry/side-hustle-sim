@@ -53,8 +53,8 @@ const CARS := {
 		# 3D model: "(FREE) 1995 Fiat Punto GT" by Karol Miklas, CC-BY-4.0 (credits in README.md).
 		"model": "res://assets/cars/free_1995_fiat_punto_gt/scene.gltf", "model_length": 3.76,
 		# Where the driver's eyes and the model's mirrors are (x is the driver's side).
-		"eye": Vector3(0.36, 1.15, -0.3), "rearview": Vector3(0.0, 1.26, 0.13),
-		"side_mirror": Vector3(0.85, 0.935, 0.462), "side_mirror_size": Vector2(0.12, 0.085),
+		"eye": Vector3(0.36, 1.15, -0.3), "rearview": Vector3(0.0, 1.22, 0.215), "rearview_size": Vector2(0.23, 0.065),
+		"side_mirror": Vector3(0.85, 0.935, 0.462), "side_mirror_size": Vector2(0.13, 0.092),
 	},
 	"civil": {
 		"name": "2013 Hondo Civil", "year": 2013, "price": 1400, "trade_in": 700,

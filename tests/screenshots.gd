@@ -53,6 +53,10 @@ func _ready() -> void:
 	main.car.toggle_camera()
 	await shot("03_driving_chase")
 	if "--quick" in args:
+		main.car.toggle_camera()
+		Game.mirror_mode = 1
+		await shot("25_screen_mirrors")
+		Game.mirror_mode = 0
 		get_tree().quit()
 		return
 	var far: Dictionary = main.town.restaurants[0]

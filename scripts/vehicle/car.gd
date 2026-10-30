@@ -142,8 +142,8 @@ func _place_mirror_cams() -> void:
 	var sz: Vector3 = Game.car().size
 	_mirror_cams.rear[1] = Transform3D(Basis(Vector3.RIGHT, -0.04), Vector3(0, 1.35, -sz.z / 2.0 - 0.15))
 	var sm: Vector3 = Game.car().get("side_mirror", Vector3(sz.x / 2.0 + 0.12, 1.08, 0.7))
-	_mirror_cams.left[1] = Transform3D(Basis(Vector3.UP, -0.22) * Basis(Vector3.RIGHT, -0.05), sm)
-	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(-sm.x, sm.y, sm.z))
+	_mirror_cams.left[1] = Transform3D(Basis(Vector3.UP, -0.32) * Basis(Vector3.RIGHT, -0.05), sm)
+	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.32) * Basis(Vector3.RIGHT, -0.05), Vector3(-sm.x, sm.y, sm.z))
 
 
 ## True while the mirror cameras should render (first person, mirrors not switched off).
@@ -157,19 +157,25 @@ func hud_mirrors() -> bool:
 
 
 ## Mirror glass on the car itself: the rearview at the top of the windshield and the two side
-## mirrors, each showing its camera's picture flipped like a real mirror.
+## mirrors, each showing its camera's picture flipped like a real mirror. The glass is drawn
+## with rounded corners and a thin dark rim, so it reads as a mirror and fills the housing.
 func _build_mirror_glass(sz: Vector3) -> void:
 	var c := Game.car()
-	var dark := Color(0.06, 0.06, 0.07)
-	# Rearview: housing plus glass, turned a little toward the driver.
+	var dark := Color(0.05, 0.05, 0.06)
+	# Rearview: a slim rounded mirror on a short stalk, turned partway toward the driver.
 	var rv := Node3D.new()
-	rv.position = c.get("rearview", Vector3(0.0, 1.36, 0.38))
-	rv.rotation.y = -0.45
+	rv.position = c.get("rearview", Vector3(0.0, 1.32, 0.36))
+	rv.rotation = Vector3(-0.06, -0.3, 0)
 	_visual.add_child(rv)
-	Kit.box(rv, Vector3(0.27, 0.082, 0.03), Vector3(0, 0, 0.018), dark, false)
-	Kit.box(rv, Vector3(0.02, 0.06, 0.02), Vector3(0, 0.06, 0.03), dark, false)
-	_mirror_quad(rv, "rear", Vector2(0.25, 0.064))
-	# Side mirrors: glass on the back of the mirror housings (CarModel's, or the model's own).
+	var rsize: Vector2 = c.get("rearview_size", Vector2(0.23, 0.062))
+	if not c.has("rearview"):
+		# Built cars get a housing and stalk; real models have their own mirror to cover.
+		Kit.box(rv, Vector3(0.018, 0.05, 0.018), Vector3(0, rsize.y / 2.0 + 0.02, 0.02), dark, false)
+		var back := _rounded_quad(rv, rsize + Vector2(0.012, 0.012), null, dark)
+		back.position.z = 0.012
+		back.rotation.y = 0.0      # faces forward, out the windshield
+	_mirror_quad(rv, "rear", rsize)
+	# Side mirrors: glass inside the mirror housings (CarModel's, or the model's own).
 	var at: Vector3 = c.get("side_mirror", Vector3(sz.x / 2.0 + 0.08, 1.08, 0.648))
 	var glass: Vector2 = c.get("side_mirror_size", Vector2(0.165, 0.105))
 	for side in [1.0, -1.0]:
@@ -180,22 +186,71 @@ func _build_mirror_glass(sz: Vector3) -> void:
 		_mirror_quad(sm, "left" if side > 0 else "right", glass)
 
 
-func _mirror_quad(parent: Node3D, key: String, size: Vector2) -> MeshInstance3D:
+static var _mirror_shader: Shader
+
+
+## A quad with rounded corners and a dark rim. With a texture it is mirror glass (the
+## picture flipped left to right); without one it is a plain dark backing.
+func _rounded_quad(parent: Node3D, size: Vector2, tex: Texture2D, color := Color.WHITE) -> MeshInstance3D:
+	if _mirror_shader == null:
+		_mirror_shader = Shader.new()
+		_mirror_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_back, shadows_disabled;
+uniform sampler2D tex : source_color, filter_linear;
+uniform bool has_tex = false;
+uniform vec4 tint : source_color = vec4(1.0);
+uniform vec2 size = vec2(0.2, 0.1);
+uniform float radius = 0.02;
+uniform float rim = 0.005;
+void fragment() {
+	vec2 p = (UV - 0.5) * size;
+	vec2 q = abs(p) - (size * 0.5 - radius);
+	float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+	if (d > 0.0) { discard; }
+	vec3 c = tint.rgb;
+	if (has_tex) {
+		c = texture(tex, vec2(1.0 - UV.x, UV.y)).rgb * tint.rgb;
+		// Glass: a touch darker and cooler, darker still toward the rim.
+		c = c * 0.9 + vec3(0.0, 0.01, 0.02);
+		c *= mix(0.8, 1.0, smoothstep(-rim * 3.0, -rim, d));
+		c = mix(c, vec3(0.03, 0.03, 0.035), smoothstep(-rim - 0.001, -rim, d));
+	}
+	ALBEDO = c;
+}
+"""
 	var q := MeshInstance3D.new()
 	var qm := QuadMesh.new()
 	qm.size = size
 	q.mesh = qm
 	q.rotation.y = PI     # face the driver (backward)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_texture = mirror_texture(key)
-	m.uv1_scale = Vector3(-1, 1, 1)   # mirror image
-	m.uv1_offset = Vector3(1, 0, 0)
+	var m := ShaderMaterial.new()
+	m.shader = _mirror_shader
+	m.set_shader_parameter("size", size)
+	m.set_shader_parameter("radius", minf(size.x, size.y) * 0.35)
+	m.set_shader_parameter("rim", minf(size.x, size.y) * 0.06)
+	m.set_shader_parameter("tint", color)
+	m.set_shader_parameter("has_tex", tex != null)
+	if tex:
+		m.set_shader_parameter("tex", tex)
 	q.material_override = m
 	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(q)
-	_mirror_glass.append([q, m, key])
 	return q
+
+
+func _mirror_quad(parent: Node3D, key: String, size: Vector2) -> MeshInstance3D:
+	var q := _rounded_quad(parent, size, mirror_texture(key))
+	_mirror_glass.append([q, q.material_override, key])
+	return q
+
+
+## Where a mirror's glass is in the world (for the on-screen copies to sit next to it).
+func mirror_glass_position(key: String) -> Vector3:
+	for g in _mirror_glass:
+		if g[2] == key and is_instance_valid(g[0]):
+			return (g[0] as Node3D).global_position
+	return global_position
 
 
 func mirror_texture(key: String) -> Texture2D:
@@ -208,8 +263,9 @@ func _update_mirrors() -> void:
 	if on != _glass_on:
 		_glass_on = on
 		for g in _mirror_glass:
-			(g[1] as StandardMaterial3D).albedo_texture = mirror_texture(g[2]) if on else null
-			(g[1] as StandardMaterial3D).albedo_color = Color.WHITE if on else Color(0.12, 0.13, 0.15)
+			var gm: ShaderMaterial = g[1]
+			gm.set_shader_parameter("has_tex", true)
+			gm.set_shader_parameter("tint", Color.WHITE if on else Color(0.12, 0.13, 0.15))
 	if not on:
 		for key in mirror_views:
 			mirror_views[key].render_target_update_mode = SubViewport.UPDATE_DISABLED

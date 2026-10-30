@@ -338,7 +338,7 @@ func _police_tests(tr: Traffic) -> void:
 	await frames(5)
 	check(car.mirrors_visible(), "mirrors on in first person")
 	await frames(3)
-	check(car._mirror_glass.size() == 3 and car._mirror_glass[0][1].albedo_texture != null, "mirror glass in the car shows the picture")
+	check(car._mirror_glass.size() == 3 and car._mirror_glass[0][1].get_shader_parameter("tint") == Color.WHITE, "mirror glass in the car shows the picture")
 	Game.mirror_mode = 1
 	await frames(10)
 	check(main.hud._mirrors.rear.visible and main.hud._mirrors.left.visible, "HUD shows mirrors")
@@ -352,7 +352,7 @@ func _police_tests(tr: Traffic) -> void:
 	await frames(5)
 	main.enter_car()
 	await frames(5)
-	check(main.hud._mirrors.rear.visible and car._mirror_glass[0][1].albedo_texture != null, "mirrors back after getting out and in")
+	check(main.hud._mirrors.rear.visible and car._mirror_glass[0][1].get_shader_parameter("tint") == Color.WHITE, "mirrors back after getting out and in")
 	Game.mirror_mode = 0
 	tr.police_enabled = true
 	var cop = tr.cops[0]

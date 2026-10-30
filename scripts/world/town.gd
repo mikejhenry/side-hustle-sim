@@ -539,8 +539,13 @@ func _counter(b: Node3D, pos: Vector3, width: float, color := Color(0.5, 0.35, 0
 
 
 func _toilet(b: Node3D, pos: Vector3, home_id := "") -> void:
-	Kit.box(b, Vector3(0.5, 0.45, 0.7), pos + Vector3(0, 0.225, 0), Color(0.95, 0.95, 0.97))
-	Kit.box(b, Vector3(0.55, 0.7, 0.2), pos + Vector3(0, 0.6, -0.4), Color(0.95, 0.95, 0.97))
+	var t := Node3D.new()
+	t.position = pos
+	b.add_child(t)
+	_toilet_model(t)
+	Kit.collider(b, Vector3(0.5, 0.8, 0.75), pos + Vector3(0, 0.4, -0.12))
+	if ResourceLoader.exists("res://assets/models/plunger/plunger.gltf"):
+		Kit.prop(b, "plunger", pos + Vector3(0.42, 0, -0.3), 0.4)
 	Kit.label(b, "WC", pos + Vector3(0, 2.2, -0.45), 40, Color(0.7, 0.85, 1.0))
 	Kit.interactable(b, pos + Vector3(0, 1, 0.6), 1.8,
 		func():
@@ -548,6 +553,72 @@ func _toilet(b: Node3D, pos: Vector3, home_id := "") -> void:
 				return ""
 			return "Use the restroom",
 		func(): Game.use_restroom())
+
+
+static var _porcelain: StandardMaterial3D
+
+
+## A two-piece toilet facing +Z: rounded pedestal and bowl, water, an open seat with the
+## lid up against the tank, the tank with its lid and a chrome flush lever, and a paper roll.
+func _toilet_model(t: Node3D) -> void:
+	if _porcelain == null:
+		_porcelain = StandardMaterial3D.new()
+		_porcelain.albedo_color = Color(0.94, 0.95, 0.96)
+		_porcelain.roughness = 0.12
+		_porcelain.metallic_specular = 0.7
+	var chrome := StandardMaterial3D.new()
+	chrome.albedo_color = Color(0.8, 0.82, 0.85)
+	chrome.metallic = 0.6
+	chrome.roughness = 0.3
+	var water := StandardMaterial3D.new()
+	water.albedo_color = Color(0.32, 0.45, 0.52)
+	water.roughness = 0.05
+	water.metallic_specular = 1.0
+	# Pedestal: narrower at the waist, oval like a real one.
+	_cyl(t, 0.13, 0.17, 0.3, Vector3(0, 0.15, -0.02), _porcelain, Vector3(1, 1, 1.35))
+	# Bowl: flares out to the rim.
+	_cyl(t, 0.205, 0.15, 0.14, Vector3(0, 0.36, 0.04), _porcelain, Vector3(1, 1, 1.38))
+	_cyl(t, 0.16, 0.16, 0.005, Vector3(0, 0.41, 0.05), water, Vector3(1, 1, 1.35))
+	# Seat ring (open) and the lid standing up against the tank.
+	var seat := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.13
+	tm.outer_radius = 0.205
+	tm.rings = 24
+	tm.ring_segments = 8
+	seat.mesh = tm
+	seat.scale = Vector3(1, 0.16, 1.32)
+	seat.position = Vector3(0, 0.44, 0.05)
+	seat.material_override = _porcelain
+	t.add_child(seat)
+	var lid := _cyl(t, 0.185, 0.185, 0.022, Vector3(0, 0.63, -0.21), _porcelain, Vector3(1, 1, 1.12))
+	lid.rotation.x = -1.45
+	# Tank (standing above the lid), its lid, and the flush lever.
+	Kit.box(t, Vector3(0.46, 0.44, 0.18), Vector3(0, 0.7, -0.34), _porcelain, false)
+	Kit.box(t, Vector3(0.49, 0.04, 0.21), Vector3(0, 0.94, -0.34), _porcelain, false)
+	var lever := Kit.box(t, Vector3(0.09, 0.018, 0.018), Vector3(-0.15, 0.86, -0.24), chrome, false)
+	lever.rotation.z = 0.2
+	_cyl(t, 0.02, 0.02, 0.02, Vector3(-0.19, 0.865, -0.245), chrome).rotation.x = PI / 2.0
+	# A spare paper roll on the tank.
+	var roll := _cyl(t, 0.055, 0.055, 0.1, Vector3(0.13, 1.01, -0.34), Kit.mat(Color(0.97, 0.97, 0.95)))
+	roll.rotation.z = PI / 2.0
+
+
+func _cyl(parent: Node3D, top: float, bottom: float, h: float, pos: Vector3, mat: Material,
+		scl := Vector3.ONE) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = top
+	cm.bottom_radius = bottom
+	cm.height = h
+	cm.radial_segments = 24
+	cm.rings = 1
+	mi.mesh = cm
+	mi.position = pos
+	mi.scale = scl
+	mi.material_override = mat
+	parent.add_child(mi)
+	return mi
 
 
 func _restaurant(lot: Node3D, rname: String, color: Color) -> void:
