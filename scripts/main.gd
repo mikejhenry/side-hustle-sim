@@ -105,7 +105,7 @@ func _ready() -> void:
 		tutorial.start()
 	else:
 		hud.toast("Welcome to New Castlewood County! %s shows the controls. %s opens your phone." % [Game.key("help"), Game.key("phone")], "info")
-		hud.toast("Rent is due at the end of the month and your Rustwagon needs an oil change. Time to hustle.", "warn")
+		hud.toast("Rent is due at the end of the month and your Punta needs an oil change. Time to hustle.", "warn")
 
 
 func _notify_sound(_text: String, kind: String) -> void:

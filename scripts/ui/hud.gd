@@ -345,7 +345,7 @@ your bills every month. Save up for a better car (cash at Honest Al's, or
 finance one at DriveThyme for more in the end) and a
 better place to live (leasing desks at Maple Court, Lakeview Towers).
 
-Rideshare apps need a 2011 or newer car. Your 1999 Rustwagon won't cut it,
+Rideshare apps need a 2011 or newer car. Your 1995 Punta won't cut it,
 so start with DoorDish, Instacrate and Jungle Flex.
 
 WEATHER

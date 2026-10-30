@@ -468,7 +468,7 @@ func _evict() -> void:
 	home_changed.emit()
 
 
-## Missed car payments: the lender takes the car. You're left with a beat-up Rustwagon from
+## Missed car payments: the lender takes the car. You're left with a beat-up Punta from
 ## their back lot, and the rest of the loan goes to collections.
 func _repossess() -> void:
 	var lost: String = car().name
@@ -484,7 +484,7 @@ func _repossess() -> void:
 	tire_tread = 30.0
 	engine_health = 60.0
 	odometer = c.odometer
-	notify("Your %s was REPOSSESSED for missed payments. %s left you a beat-up Rustwagon." % [lost, GameData.FINANCE_NAME], "bad")
+	notify("Your %s was REPOSSESSED for missed payments. %s left you a beat-up Punta." % [lost, GameData.FINANCE_NAME], "bad")
 	car_changed.emit()
 
 

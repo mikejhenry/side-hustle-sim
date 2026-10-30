@@ -27,6 +27,8 @@ static func paint(c: Color, rusty := false) -> StandardMaterial3D:
 ## Returns a Node3D containing the car's visuals. with_wheels adds static wheel meshes
 ## (for display cars; the drivable car uses VehicleWheel3D nodes instead).
 static func build(data: Dictionary, rusty := false, with_wheels := false) -> Node3D:
+	if data.has("model") and ResourceLoader.exists(data.model):
+		return _from_model(data, with_wheels)
 	var root := Node3D.new()
 	var size: Vector3 = data.size
 	var w := size.x
@@ -148,3 +150,143 @@ static func wheel_mesh() -> Node3D:
 		spoke.rotation.x = i * TAU / 5.0
 		n.add_child(spoke)
 	return n
+
+
+
+# --- Real car models (glTF) ----------------------------------------------------------
+# data.model: the glTF file. data.model_axes: how the file is oriented, as the car-space
+# direction of its x, y and z axes (forward is +Z, up is +Y). data.model_length: meters,
+# bumper to bumper. The model's tire and rim meshes are cut into four wheels so the
+# drivable car can spin and steer them; build() stores them in the root's "wheels" meta:
+# [{node (Node3D centered on the hub), center (Vector3), radius}].
+
+
+static func _from_model(data: Dictionary, with_wheels: bool) -> Node3D:
+	var root := Node3D.new()
+	root.name = "CarModel"
+	var holder := Node3D.new()
+	root.add_child(holder)
+	var scene: Node3D = load(data.model).instantiate()
+	holder.add_child(scene)
+	var axes: Array = data.get("model_axes", [Vector3.RIGHT, Vector3.UP, Vector3.BACK])
+	var basis := Basis(axes[0], axes[1], axes[2])
+	# Size: measure, then scale to the real length.
+	var meshes: Array = []
+	for n in scene.find_children("*", "MeshInstance3D", true, false):
+		meshes.append(n)
+	var box := _bounds(scene, meshes, Transform3D(basis, Vector3.ZERO))
+	var k: float = data.get("model_length", 4.0) / maxf(box.size.z, 0.01)
+	var xf := Transform3D(basis.scaled(Vector3.ONE * k), Vector3.ZERO)
+	# Wheels: split the tire and rim meshes into four by corner.
+	var wheel_tris := {}      # corner key -> SurfaceTool per material
+	var wheel_meshes: Array = []
+	for mi in meshes:
+		var mat: Material = (mi as MeshInstance3D).get_active_material(0)
+		var mname := mat.resource_name if mat else ""
+		if mname.contains("tire") or mname.contains("rim") or mname.contains("wheel"):
+			wheel_meshes.append(mi)
+	var corners := {}         # key -> {lo, hi, parts: [[ArrayMesh arrays, material]]}
+	for mi in wheel_meshes:
+		var m: MeshInstance3D = mi
+		var to_car: Transform3D = xf * _rel(scene, m)
+		for surf in m.mesh.get_surface_count():
+			var arr: Array = m.mesh.surface_get_arrays(surf)
+			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL] if arr[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+			var uvs: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV] if arr[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			if idx.is_empty():
+				for i in verts.size():
+					idx.append(i)
+			var per: Dictionary = {}
+			for t in range(0, idx.size(), 3):
+				var a := to_car * verts[idx[t]]
+				var b := to_car * verts[idx[t + 1]]
+				var c := to_car * verts[idx[t + 2]]
+				var ctr := (a + b + c) / 3.0
+				var key := "%d%d" % [1 if ctr.x > 0.0 else 0, 1 if ctr.z > 0.0 else 0]
+				if not per.has(key):
+					per[key] = [PackedVector3Array(), PackedVector3Array(), PackedVector2Array()]
+				for j in 3:
+					var vi := idx[t + j]
+					per[key][0].append(to_car * verts[vi])
+					per[key][1].append((to_car.basis * norms[vi]).normalized() if not norms.is_empty() else Vector3.UP)
+					per[key][2].append(uvs[vi] if not uvs.is_empty() else Vector2.ZERO)
+			for key in per:
+				if not corners.has(key):
+					corners[key] = {"lo": Vector3.INF, "hi": -Vector3.INF, "parts": []}
+				var cdata: Dictionary = corners[key]
+				for v in per[key][0]:
+					cdata.lo = cdata.lo.min(v)
+					cdata.hi = cdata.hi.max(v)
+				cdata.parts.append([per[key], m.get_active_material(surf)])
+		m.visible = false
+	# Place the body: centered, tires touching y = 0.
+	var hub_y := 0.0
+	var tire_r := 0.0
+	var count := 0
+	for key in corners:
+		hub_y += (corners[key].lo.y + corners[key].hi.y) / 2.0
+		tire_r += (corners[key].hi.y - corners[key].lo.y) / 2.0
+		count += 1
+	hub_y = hub_y / count if count > 0 else 0.0
+	tire_r = tire_r / count if count > 0 else WHEEL_R
+	box = _bounds(scene, meshes, xf)
+	var shift := Vector3(-(box.position.x + box.size.x / 2.0), tire_r - hub_y, -(box.position.z + box.size.z / 2.0))
+	holder.transform = Transform3D(xf.basis, shift)
+	var wheels: Array = []
+	for key in corners:
+		var cdata: Dictionary = corners[key]
+		var center: Vector3 = (cdata.lo + cdata.hi) / 2.0
+		var radius: float = (cdata.hi.y - cdata.lo.y) / 2.0
+		var hub := Node3D.new()
+		for part in cdata.parts:
+			var arrays := []
+			arrays.resize(Mesh.ARRAY_MAX)
+			var local := PackedVector3Array()
+			for v in part[0][0]:
+				local.append(v - center)
+			arrays[Mesh.ARRAY_VERTEX] = local
+			arrays[Mesh.ARRAY_NORMAL] = part[0][1]
+			arrays[Mesh.ARRAY_TEX_UV] = part[0][2]
+			var am := ArrayMesh.new()
+			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			var wmi := MeshInstance3D.new()
+			wmi.mesh = am
+			wmi.material_override = part[1]
+			hub.add_child(wmi)
+		wheels.append({"node": hub, "center": center + shift, "radius": radius})
+		if with_wheels:
+			hub.position = center + shift
+			root.add_child(hub)
+	root.set_meta("wheels", wheels)
+	root.set_meta("size", box.size)
+	return root
+
+
+## Transform of `n` in the space `top` sits in, including top's own transform (works
+## outside the scene tree).
+static func _rel(top: Node3D, n: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var cur: Node = n
+	while cur != null:
+		if cur is Node3D:
+			t = (cur as Node3D).transform * t
+		if cur == top:
+			break
+		cur = cur.get_parent()
+	return t
+
+
+static func _bounds(top: Node3D, meshes: Array, xf: Transform3D) -> AABB:
+	var box := AABB()
+	var first := true
+	for mi in meshes:
+		var m: MeshInstance3D = mi
+		var mat: Material = m.get_active_material(0)
+		if mat and mat.resource_name.contains("shadow"):
+			continue
+		var ab: AABB = (xf * _rel(top, m)) * m.get_aabb()
+		box = ab if first else box.merge(ab)
+		first = false
+	return box

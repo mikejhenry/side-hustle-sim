@@ -46,10 +46,15 @@ const TOW_PRICE := 85.0
 # comfort scales rideshare pay and ratings. insurance: per month.
 const CARS := {
 	"rustwagon": {
-		"name": "1999 Rustwagon Sedan", "year": 1999, "price": 0, "trade_in": 250,
+		"name": "1995 Fiot Punta GT", "year": 1995, "price": 0, "trade_in": 250,
 		"engine": 2550.0, "top_speed": 27.0, "mpg": 20.0, "tank": 12.0,
 		"comfort": 0.7, "insurance": 150.0, "tires": 180.0,
-		"color": Color(0.52, 0.36, 0.26), "size": Vector3(1.8, 0.75, 4.3), "odometer": 187412.0,
+		"color": Color(0.52, 0.36, 0.26), "size": Vector3(1.66, 0.75, 3.76), "odometer": 187412.0,
+		# 3D model: "(FREE) 1995 Fiat Punto GT" by Karol Miklas, CC-BY-4.0 (credits in README.md).
+		"model": "res://assets/cars/free_1995_fiat_punto_gt/scene.gltf", "model_length": 3.76,
+		# Where the driver's eyes and the model's mirrors are (x is the driver's side).
+		"eye": Vector3(0.36, 1.15, -0.3), "rearview": Vector3(0.0, 1.26, 0.13),
+		"side_mirror": Vector3(0.85, 0.935, 0.462), "side_mirror_size": Vector2(0.12, 0.085),
 	},
 	"civil": {
 		"name": "2013 Hondo Civil", "year": 2013, "price": 1400, "trade_in": 700,

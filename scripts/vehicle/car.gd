@@ -37,18 +37,22 @@ var _mirror_frame := 0
 var _engine: AudioStreamPlayer3D
 var _mirror_glass: Array = []    # [MeshInstance3D, material, key]
 var _glass_on := true
+var _body_shape: BoxShape3D
+var _cab_col: CollisionShape3D
+const WHEEL_SPECS := [[0.85, 1.35, true], [-0.85, 1.35, true], [0.85, -1.35, false], [-0.85, -1.35, false]]
 
 
 func _ready() -> void:
 	mass = 1150.0
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = Vector3(0, 0.25, 0.1)
+	center_of_mass = Vector3(0, 0.1, 0.1)
 	contact_monitor = true
 	max_contacts_reported = 4
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(1.8, 0.8, 4.3)
 	col.shape = shape
+	_body_shape = shape
 	col.position = Vector3(0, 0.75, 0)
 	add_child(col)
 	var cab_col := CollisionShape3D.new()
@@ -57,8 +61,9 @@ func _ready() -> void:
 	cab_col.shape = cab_shape
 	cab_col.position = Vector3(0, 1.22, -0.2)
 	add_child(cab_col)
+	_cab_col = cab_col
 
-	for spec in [[0.85, 1.35, true], [-0.85, 1.35, true], [0.85, -1.35, false], [-0.85, -1.35, false]]:
+	for spec in WHEEL_SPECS:
 		var w := VehicleWheel3D.new()
 		w.position = Vector3(spec[0], 0.5, spec[1])
 		w.use_as_steering = spec[2]
@@ -69,7 +74,7 @@ func _ready() -> void:
 		w.suspension_stiffness = 40.0
 		w.damping_compression = 0.9
 		w.damping_relaxation = 1.2
-		w.wheel_roll_influence = 0.05
+		w.wheel_roll_influence = 0.02
 		w.wheel_friction_slip = 3.0
 		add_child(w)
 		w.add_child(CarModel.wheel_mesh())
@@ -136,8 +141,9 @@ func _place_mirror_cams() -> void:
 		return
 	var sz: Vector3 = Game.car().size
 	_mirror_cams.rear[1] = Transform3D(Basis(Vector3.RIGHT, -0.04), Vector3(0, 1.35, -sz.z / 2.0 - 0.15))
-	_mirror_cams.left[1] = Transform3D(Basis(Vector3.UP, -0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(sz.x / 2.0 + 0.12, 1.08, 0.7))
-	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(-sz.x / 2.0 - 0.12, 1.08, 0.7))
+	var sm: Vector3 = Game.car().get("side_mirror", Vector3(sz.x / 2.0 + 0.12, 1.08, 0.7))
+	_mirror_cams.left[1] = Transform3D(Basis(Vector3.UP, -0.22) * Basis(Vector3.RIGHT, -0.05), sm)
+	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.22) * Basis(Vector3.RIGHT, -0.05), Vector3(-sm.x, sm.y, sm.z))
 
 
 ## True while the mirror cameras should render (first person, mirrors not switched off).
@@ -153,22 +159,25 @@ func hud_mirrors() -> bool:
 ## Mirror glass on the car itself: the rearview at the top of the windshield and the two side
 ## mirrors, each showing its camera's picture flipped like a real mirror.
 func _build_mirror_glass(sz: Vector3) -> void:
+	var c := Game.car()
 	var dark := Color(0.06, 0.06, 0.07)
 	# Rearview: housing plus glass, turned a little toward the driver.
 	var rv := Node3D.new()
-	rv.position = Vector3(0.0, 1.36, 0.38)
+	rv.position = c.get("rearview", Vector3(0.0, 1.36, 0.38))
 	rv.rotation.y = -0.45
 	_visual.add_child(rv)
 	Kit.box(rv, Vector3(0.27, 0.082, 0.03), Vector3(0, 0, 0.018), dark, false)
 	Kit.box(rv, Vector3(0.02, 0.06, 0.02), Vector3(0, 0.06, 0.03), dark, false)
 	_mirror_quad(rv, "rear", Vector2(0.25, 0.064))
-	# Side mirrors: glass on the back of the housings CarModel puts on the doors.
+	# Side mirrors: glass on the back of the mirror housings (CarModel's, or the model's own).
+	var at: Vector3 = c.get("side_mirror", Vector3(sz.x / 2.0 + 0.08, 1.08, 0.648))
+	var glass: Vector2 = c.get("side_mirror_size", Vector2(0.165, 0.105))
 	for side in [1.0, -1.0]:
 		var sm := Node3D.new()
-		sm.position = Vector3(side * (sz.x / 2.0 + 0.08), 1.08, 0.7)
+		sm.position = Vector3(side * at.x, at.y, at.z)
 		sm.rotation.y = side * 0.2
 		_visual.add_child(sm)
-		_mirror_quad(sm, "left" if side > 0 else "right", Vector2(0.165, 0.105)).position.z = -0.052
+		_mirror_quad(sm, "left" if side > 0 else "right", glass)
 
 
 func _mirror_quad(parent: Node3D, key: String, size: Vector2) -> MeshInstance3D:
@@ -247,10 +256,16 @@ func apply_model() -> void:
 	add_child(_visual)
 	var sz: Vector3 = c.size
 	_place_mirror_cams()
-	_visual.add_child(CarModel.build(c, Game.car_id == "rustwagon"))
+	fp_camera.position = c.get("eye", Vector3(0.38, 1.24, -0.15))
+	var model := CarModel.build(c, Game.car_id == "rustwagon" and not c.has("model"))
+	_visual.add_child(model)
+	_fit_wheels(model)
 	_mirror_glass.clear()
 	_build_mirror_glass(sz)
 	_glass_on = not mirrors_visible()   # force a refresh
+	_steering_wheel = null
+	if c.has("model"):
+		return   # real models bring their own interior
 	# Interior (seen in first person): dashboard, gauges, steering wheel, seats.
 	var dash := Kit.mat(Color(0.1, 0.1, 0.11))
 	Kit.box(_visual, Vector3(sz.x - 0.2, 0.22, 0.55), Vector3(0, 0.9, 0.78), dash, false)
@@ -277,6 +292,41 @@ func apply_model() -> void:
 	for x in [0.38, -0.38]:
 		Kit.box(_visual, Vector3(0.55, 0.15, 0.55), Vector3(x, 0.72, -0.35), Color(0.25, 0.22, 0.2), false)
 		Kit.box(_visual, Vector3(0.55, 0.65, 0.12), Vector3(x, 1.05, -0.65), Color(0.25, 0.22, 0.2), false)
+
+
+## Real car models bring their own wheels: put the physics wheels where the model's are,
+## with its radius, and spin its wheel meshes. Built cars use the standard layout.
+func _fit_wheels(model: Node3D) -> void:
+	var fitted: Array = model.get_meta("wheels", [])
+	var sz: Vector3 = Game.car().size
+	_body_shape.size = Vector3(sz.x, 0.8, sz.z)
+	for i in _wheels.size():
+		var w: VehicleWheel3D = _wheels[i]
+		for ch in w.get_children():
+			ch.queue_free()
+		var spec: Array = WHEEL_SPECS[i]
+		var match_w: Dictionary = {}
+		for f in fitted:
+			if signf(f.center.x) == signf(spec[0]) and signf(f.center.z) == signf(spec[1]):
+				match_w = f
+		if match_w.is_empty():
+			w.position = Vector3(spec[0], 0.5, spec[1])
+			w.wheel_radius = 0.36
+			w.add_child(CarModel.wheel_mesh())
+		else:
+			var center: Vector3 = match_w.center
+			# The wheel hangs about 0.16 m below its mount once the car settles.
+			w.position = Vector3(center.x, center.y + 0.16, center.z)
+			w.wheel_radius = match_w.radius
+			var hub: Node3D = match_w.node
+			if hub.get_parent():
+				hub.get_parent().remove_child(hub)
+			hub.position = Vector3.ZERO
+			w.add_child(hub)
+		# A wheel reads its mount point when it enters the tree, so re-add it to move it.
+		if w.is_inside_tree():
+			remove_child(w)
+			add_child(w)
 
 
 func set_driver(on: bool) -> void:

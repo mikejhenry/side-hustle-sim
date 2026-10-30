@@ -52,6 +52,9 @@ func _ready() -> void:
 	main.pause_menu.close()
 	main.car.toggle_camera()
 	await shot("03_driving_chase")
+	if "--quick" in args:
+		get_tree().quit()
+		return
 	var far: Dictionary = main.town.restaurants[0]
 	main.set_waypoint(far.door, far.name)
 	await frames(40)

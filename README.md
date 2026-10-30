@@ -1,6 +1,6 @@
 # Side Hustle Sim
 
-A gig-economy life sim made in Godot 4. You start in a beat-up 1999 Rustwagon, renting a room at
+A gig-economy life sim made in Godot 4. You start in a beat-up 1995 Fiot Punta GT, renting a room at
 Dottie's Boarding House, and grind parody gig apps to pay rent, keep your car alive, and work your
 way up to better cars and better homes.
 
@@ -189,6 +189,15 @@ shops, and save/load.
 All third-party art is CC0 (public domain): photo-scanned textures and street props from
 [Poly Haven](https://polyhaven.com), and characters, trees and cars by
 [Quaternius](https://quaternius.com) (`assets/quaternius`).
+
+The starter car is based on "(FREE) 1995 Fiat Punto GT"
+(https://sketchfab.com/3d-models/free-1995-fiat-punto-gt-48db6facb4b64e99b60f36b8c01185e1)
+by Karol Miklas (https://sketchfab.com/karolmiklas), licensed under CC-BY-4.0
+(http://creativecommons.org/licenses/by/4.0/). Shown in game as the "Fiot Punta" (`assets/cars/free_1995_fiat_punto_gt`).
+
+The player character and animations come from Adobe Mixamo. Mixamo's terms don't allow
+sharing the files on their own, so `assets/mixamo/` is kept out of git; without it the
+player uses the Quaternius character.
 
 ## Note on names
 

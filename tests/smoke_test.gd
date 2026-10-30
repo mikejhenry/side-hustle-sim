@@ -641,7 +641,14 @@ func _use_nearest_with(text: String, near_pos: Vector3, radius: float) -> void:
 		return
 	main.player.global_position = best.global_position - Vector3(0, 0.9, 0)
 	await frames(3)
-	check(main._current == best, "main picks '%s'" % best.get_prompt())
+	for i in 15:
+		if main._current == best:
+			break
+		await frames(1)
+	var cur: String = "nothing"
+	if main._current:
+		cur = "'%s' at %s" % [main._current.get_prompt(), main._current.global_position]
+	check(main._current == best, "main picks '%s' at %s (picked %s, player at %s)" % [best.get_prompt(), best.global_position, cur, main.player.global_position])
 	best.use()
 	await frames(2)
 
