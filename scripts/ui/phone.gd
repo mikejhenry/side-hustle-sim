@@ -255,11 +255,16 @@ func _gig_app(id: String) -> void:
 	var a: Dictionary = GameData.APPS[id]
 	_header(a.name, a.color, a.tagline)
 	var top := _card()
-	_live_label(top, func(n): n.text = "Rating: %.2f ★     %s" % [Gigs.ratings[id], Gigs.demand_label(id)], 15)
+	_live_label(top, func(n): n.text = "Rating: %.2f ★  %s     %s" % [Gigs.ratings[id], Gigs.tier(id)[1], Gigs.demand_label(id)], 15)
+	_rating_card(top, id)
 	_demand_chart(top, id)
 	var reason := Gigs.ineligible_reason(id)
 	if reason != "":
 		_lbl(top, reason, 14, Color(1, 0.5, 0.4))
+	if Gigs.can_appeal(id):
+		_btn(top, "Take the Driver Quality Course ($%.0f)" % CustomerData.REACTIVATION_FEE, func():
+			Gigs.appeal(id)
+			_rebuild(), Color(0.5, 0.35, 0.1))
 	var on: bool = Gigs.online[id]
 	_btn(top, "GO OFFLINE" if on else "GO ONLINE", func():
 		Gigs.set_online(id, not on)
@@ -276,6 +281,35 @@ func _gig_app(id: String) -> void:
 		_offer_card(o, a)
 	if on and Gigs.job.is_empty() and not Gigs.offers.any(func(o): return o.app == id):
 		_lbl(_screen, "Looking for offers..." if a.kind != "flex" else "Blocks appear about 2.5 hours before they start (6AM, 10AM, 2PM, 6PM).", 14, Color(0.7, 0.7, 0.75))
+
+
+## Your tier, what it does, and your latest ratings.
+func _rating_card(parent: Node, id: String) -> void:
+	var t: Array = Gigs.tier(id)
+	if Gigs.deactivated.has(id):
+		_lbl(parent, "ACCOUNT DEACTIVATED", 15, Color(1, 0.4, 0.35))
+	else:
+		_lbl(parent, "%s tier: %s" % [t[1], t[3]], 12, t[2])
+	var rec: Array = Gigs.recent.get(id, [])
+	if not rec.is_empty():
+		var parts := PackedStringArray()
+		for x in rec:
+			parts.append("%d★" % x)
+		_lbl(parent, "Latest ratings: " + "  ".join(parts), 12, Color(0.8, 0.8, 0.85))
+	elif Gigs.ratings[id] < CustomerData.WARN_BELOW and not Gigs.deactivated.has(id):
+		_lbl(parent, "Warning: below %.2f you'll be deactivated." % CustomerData.DEACTIVATE_BELOW, 12, Color(1, 0.5, 0.4))
+
+
+## "Kayla • 💬 Chatty • 4.92★" plus the order note and a Priority badge.
+func _customer_lines(v: Node, o: Dictionary, who: String) -> void:
+	if o.get("priority", false):
+		_lbl(v, "⭐ PRIORITY  •  Platinum pay +$%.2f" % o.get("tier_pay", 0.0), 13, Color(0.75, 0.9, 1.0))
+	elif o.get("tier_pay", 0.0) < 0.0:
+		_lbl(v, "Low rating: this offer pays $%.2f less" % -o.tier_pay, 12, Color(1, 0.6, 0.45))
+	if o.has("personality"):
+		_lbl(v, "%s  •  %s" % [who, Gigs.customer_tag(o)], 13, Color(1, 0.9, 0.65))
+	if o.get("note", "") != "":
+		_lbl(v, "Note: \"%s\"" % o.note, 12, Color(0.8, 0.8, 0.85))
 
 
 func _demand_chart(parent: Node, id: String) -> void:
@@ -301,6 +335,7 @@ func _demand_chart(parent: Node, id: String) -> void:
 func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 	var v := _card(Color(0.12, 0.18, 0.14))
 	_lbl(v, "$%.2f" % o.pay, 30, Color(0.5, 1, 0.6))
+	_customer_lines(v, o, o.get("passenger", o.get("customer_name", "")))
 	match o.kind:
 		"ride":
 			_lbl(v, "%s • %.1f mi trip • pickup %.1f mi away%s" % [o.passenger, o.miles, o.pickup_miles,
@@ -330,6 +365,10 @@ func _job_card(_id: String) -> void:
 	var j := Gigs.job
 	var v := _card(Color(0.12, 0.15, 0.22))
 	_lbl(v, "ACTIVE JOB  •  $%.2f" % j.pay, 18, Color(0.6, 0.85, 1))
+	if j.has("personality"):
+		_lbl(v, "%s  •  %s" % [j.get("passenger", j.get("customer_name", "")), Gigs.customer_tag(j)], 13, Color(1, 0.9, 0.65))
+	if j.get("note", "") != "":
+		_lbl(v, "Note: \"%s\"" % j.note, 12, Color(0.8, 0.8, 0.85))
 	_live_label(v, func(n): n.text = Gigs.status_text(), 14)
 	if j.kind != "flex":
 		_live_label(v, func(n):

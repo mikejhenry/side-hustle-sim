@@ -576,7 +576,7 @@ func toast(text: String, kind := "info") -> void:
 
 func _on_offer(o: Dictionary) -> void:
 	var a: Dictionary = GameData.APPS[o.app]
-	var text := "%s: new offer $%.2f" % [a.name, o.pay]
+	var text := "%s: new %soffer $%.2f" % [a.name, "PRIORITY " if o.get("priority", false) else "", o.pay]
 	if o.kind != "flex":
 		text += "  •  %.1f mi" % o.miles
 	toast(text + "   (%s to open phone)" % Game.key("phone"), "money")

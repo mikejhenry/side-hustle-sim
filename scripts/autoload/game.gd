@@ -692,6 +692,7 @@ func save_game() -> void:
 		"engine_health": engine_health, "odometer": odometer, "bills": bills,
 		"transactions": transactions, "stats": stats, "bill_seq": _bill_seq,
 		"ratings": Gigs.ratings, "phone_pro": phone_pro, "loan": loan,
+		"gig_state": Gigs.save_state(),
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -735,6 +736,8 @@ func load_game() -> bool:
 	var r = data.get("ratings", {})
 	for k in r:
 		Gigs.ratings[k] = float(r[k])
+	var gs = data.get("gig_state", {})
+	Gigs.load_state(gs if typeof(gs) == TYPE_DICTIONARY else {})
 	Gigs.reset_jobs()
 	money_changed.emit(money)
 	car_changed.emit()
