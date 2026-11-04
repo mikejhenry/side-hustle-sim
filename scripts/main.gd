@@ -20,6 +20,10 @@ var traffic: Traffic
 var traffic_control: TrafficControl
 var weather_fx: WeatherFX
 var pedestrians: Pedestrians
+var construction: Construction
+var parked_cars: ParkedCars
+var birds: Birds
+var ambience: Ambience
 var pause_menu: PauseMenu
 var tutorial: Tutorial
 var auto_tutorial := true     # tests turn this off
@@ -83,6 +87,7 @@ func _ready() -> void:
 	pedestrians.main = self
 	add_child(pedestrians)
 	pedestrians.build()
+	_build_city_life()
 	tutorial = Tutorial.new()
 	tutorial.main = self
 	add_child(tutorial)
@@ -90,11 +95,6 @@ func _ready() -> void:
 	pause_menu.main = self
 	add_child(pause_menu)
 
-	var amb := AudioStreamPlayer.new()
-	amb.stream = Sfx.get_stream("ambience")
-	amb.volume_db = -20.0
-	add_child(amb)
-	amb.play()
 	Game.notified.connect(_notify_sound)
 	Gigs.offer_received.connect(func(_o): Sfx.play(self, "ping", -2.0))
 
@@ -106,6 +106,29 @@ func _ready() -> void:
 	else:
 		hud.toast("Welcome to New Castlewood County! %s shows the controls. %s opens your phone." % [Game.key("help"), Game.key("phone")], "info")
 		hud.toast("Rent is due at the end of the month and your Punta needs an oil change. Time to hustle.", "warn")
+
+
+## Road work, parked cars, birds and the district soundscape.
+func _build_city_life() -> void:
+	parked_cars = ParkedCars.new()
+	parked_cars.town = town
+	parked_cars.main = self
+	add_child(parked_cars)
+	parked_cars.build()
+	construction = Construction.new()
+	construction.town = town
+	construction.main = self
+	add_child(construction)
+	construction.build()
+	birds = Birds.new()
+	birds.town = town
+	birds.main = self
+	add_child(birds)
+	birds.build()
+	ambience = Ambience.new()
+	ambience.town = town
+	ambience.main = self
+	add_child(ambience)
 
 
 func _notify_sound(_text: String, kind: String) -> void:
