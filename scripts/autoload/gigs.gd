@@ -10,6 +10,7 @@ extends Node
 signal offers_changed
 signal job_changed
 signal offer_received(offer: Dictionary)
+signal job_completed(job: Dictionary, pay: float, stars: float)
 
 var online := {}
 var offers: Array = []
@@ -217,6 +218,7 @@ func _make_offer(id: String) -> void:
 			o.deadline = now + 50.0 + items.size() * 6.0 + miles * 9.0
 	o.miles = snappedf(o.miles, 0.1)
 	o.pay = snappedf(o.pay, 0.01)
+	Story.decorate_offer(o)   # sometimes it's one of your regulars
 	offers.append(o)
 	offer_received.emit(o)
 
@@ -552,7 +554,9 @@ func _complete(stars: float, extra_tip: float, msg: String) -> void:
 	Game.stats.jobs += 1
 	_rate(job.app, stars)
 	Game.notify("%s +$%.2f. %s" % [a.name, pay, msg], "money")
+	var done := job
 	job = {}
+	job_completed.emit(done, pay, stars)
 	job_changed.emit()
 
 

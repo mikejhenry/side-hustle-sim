@@ -22,6 +22,7 @@ var weather_fx: WeatherFX
 var pedestrians: Pedestrians
 var pause_menu: PauseMenu
 var tutorial: Tutorial
+var intro: Intro
 var auto_tutorial := true     # tests turn this off
 var _gps_timer := 0.0
 
@@ -89,6 +90,9 @@ func _ready() -> void:
 	pause_menu = PauseMenu.new()
 	pause_menu.main = self
 	add_child(pause_menu)
+	intro = Intro.new()
+	intro.main = self
+	add_child(intro)
 
 	var amb := AudioStreamPlayer.new()
 	amb.stream = Sfx.get_stream("ambience")
@@ -101,7 +105,13 @@ func _ready() -> void:
 	player.set_active(true)
 	Game.home_changed.connect(_on_home_changed)
 	update_mouse_mode()
-	if auto_tutorial and not Tutorial.is_done():
+	if auto_tutorial and not Intro.is_seen():
+		# First game: the story intro, then the tutorial.
+		intro.finished.connect(func():
+			if not Tutorial.is_done():
+				tutorial.start(), CONNECT_ONE_SHOT)
+		intro.start()
+	elif auto_tutorial and not Tutorial.is_done():
 		tutorial.start()
 	else:
 		hud.toast("Welcome to New Castlewood County! %s shows the controls. %s opens your phone." % [Game.key("help"), Game.key("phone")], "info")
@@ -117,6 +127,10 @@ func _notify_sound(_text: String, kind: String) -> void:
 
 func start_tutorial() -> void:
 	tutorial.start()
+
+
+func play_intro() -> void:
+	intro.start()
 
 
 func _build_environment() -> void:
@@ -302,6 +316,8 @@ func _process(delta: float) -> void:
 		t = tutorial.target()
 	beacon.visible = not t.is_empty()
 	var obj := Gigs.status_text()
+	if obj == "" and not tutorial.active:
+		obj = Story.objective_text()
 	if not t.is_empty():
 		beacon.global_position = t.pos
 		var dist := pos.distance_to(t.pos)

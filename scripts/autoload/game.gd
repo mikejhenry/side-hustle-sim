@@ -11,6 +11,7 @@ signal home_changed
 signal slept(hours: float)
 signal bladder_accident
 signal bills_changed
+signal bill_paid(bill: Dictionary)
 
 const SAVE_PATH := "user://savegame.json"
 
@@ -422,6 +423,7 @@ func pay_bill(bill_id: int) -> bool:
 		if b.id == bill_id and not b.paid:
 			if spend(b.amount, "Bill: " + b.name):
 				b.paid = true
+				bill_paid.emit(b)
 				if b.kind == "phone" and not phone_service:
 					phone_service = true
 					notify("Phone service restored.", "good")
@@ -692,6 +694,7 @@ func save_game() -> void:
 		"engine_health": engine_health, "odometer": odometer, "bills": bills,
 		"transactions": transactions, "stats": stats, "bill_seq": _bill_seq,
 		"ratings": Gigs.ratings, "phone_pro": phone_pro, "loan": loan,
+		"story": Story.save_state(),
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -736,6 +739,7 @@ func load_game() -> bool:
 	for k in r:
 		Gigs.ratings[k] = float(r[k])
 	Gigs.reset_jobs()
+	Story.load_state(data.get("story", {}))
 	money_changed.emit(money)
 	car_changed.emit()
 	home_changed.emit()

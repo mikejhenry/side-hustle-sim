@@ -15,7 +15,7 @@ var _tick := 0.0
 
 const ICONS := {
 	"yoober": "Y", "drift": "D", "doordish": "DD", "instacrate": "IC", "jungleflex": "JF",
-	"bank": "$", "garage": "G", "maps": "M", "me": "Me",
+	"bank": "$", "garage": "G", "maps": "M", "me": "Me", "hub": "HH", "texts": "TX",
 }
 
 
@@ -62,6 +62,7 @@ func _ready() -> void:
 	Game.bills_changed.connect(_mark_dirty)
 	Game.home_changed.connect(_mark_dirty)
 	Game.car_changed.connect(_mark_dirty)
+	Story.changed.connect(_mark_dirty)
 
 
 func _mark_dirty() -> void:
@@ -217,6 +218,8 @@ func _build_screen() -> void:
 		"garage": _garage()
 		"maps": _maps()
 		"me": _me()
+		"hub": StoryScreens.hub(self)
+		"texts": StoryScreens.texts(self)
 		_: _gig_app(current_app)
 
 
@@ -236,11 +239,15 @@ func _home() -> void:
 	apps.append(["garage", "Garage", Color(0.35, 0.35, 0.4)])
 	apps.append(["maps", "Maps", Color(0.2, 0.45, 0.75)])
 	apps.append(["me", "Me", Color(0.55, 0.35, 0.65)])
+	apps.append(["hub", "Hustle Hub", StoryScreens.HUB_COLOR])
+	apps.append(["texts", "Texts", StoryScreens.TEXTS_COLOR])
 	for a in apps:
 		var id: String = a[0]
 		var label: String = "%s\n%s" % [ICONS[id], a[1]]
 		if Gigs.online.get(id, false):
 			label += " •"
+		if id == "texts" and Story.unread() > 0:
+			label += " (%d)" % Story.unread()
 		var b := _btn(grid, label, func(): open_app(id), a[2])
 		b.custom_minimum_size = Vector2(98, 84)
 		b.add_theme_font_size_override("font_size", 14)

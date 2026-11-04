@@ -24,6 +24,7 @@ config/icon="res://icon.svg"
 
 Game="*res://scripts/autoload/game.gd"
 Gigs="*res://scripts/autoload/gigs.gd"
+Story="*res://scripts/autoload/story.gd"
 
 [display]
 
