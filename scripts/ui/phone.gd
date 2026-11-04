@@ -1,6 +1,7 @@
 class_name Phone
 extends CanvasLayer
-## The in-game smartphone. Gig apps, Bank (bills), Garage (car), Maps (GPS), and Me (needs).
+## The in-game smartphone. Gig apps, Bank (bills), Garage (car), Maps (GPS), Wayfare (home goods)
+## and Me (needs).
 
 var main: Node = null
 var is_open := false
@@ -15,7 +16,7 @@ var _tick := 0.0
 
 const ICONS := {
 	"yoober": "Y", "drift": "D", "doordish": "DD", "instacrate": "IC", "jungleflex": "JF",
-	"bank": "$", "garage": "G", "maps": "M", "me": "Me",
+	"bank": "$", "garage": "G", "maps": "M", "me": "Me", "wayfare": "W",
 }
 
 
@@ -62,6 +63,7 @@ func _ready() -> void:
 	Game.bills_changed.connect(_mark_dirty)
 	Game.home_changed.connect(_mark_dirty)
 	Game.car_changed.connect(_mark_dirty)
+	Game.furniture_changed.connect(_mark_dirty)
 
 
 func _mark_dirty() -> void:
@@ -217,6 +219,7 @@ func _build_screen() -> void:
 		"garage": _garage()
 		"maps": _maps()
 		"me": _me()
+		"wayfare": _wayfare()
 		_: _gig_app(current_app)
 
 
@@ -236,6 +239,7 @@ func _home() -> void:
 	apps.append(["garage", "Garage", Color(0.35, 0.35, 0.4)])
 	apps.append(["maps", "Maps", Color(0.2, 0.45, 0.75)])
 	apps.append(["me", "Me", Color(0.55, 0.35, 0.65)])
+	apps.append(["wayfare", "Wayfare", WAYFARE_COLOR])
 	for a in apps:
 		var id: String = a[0]
 		var label: String = "%s\n%s" % [ICONS[id], a[1]]
@@ -447,7 +451,7 @@ func _me() -> void:
 	_live_label(v, func(n):
 		n.text = "Hunger: %d%%   Bladder: %d%%   Energy: %d%%" % [Game.hunger, Game.bladder, Game.energy], 15)
 	var home := Game.home()
-	_lbl(v, "Home: %s" % (home.name if not home.is_empty() else "None (sleeping in your car)"), 14)
+	_lbl(v, "Home: %s" % ("%s (%s)" % [home.name, home.area] if not home.is_empty() else "None (sleeping in your car)"), 14)
 	_lbl(v, "Car: %s" % Game.car().name, 14)
 	var naps := _card()
 	_lbl(naps, "Sleep in your car (poor quality). Must be parked.", 13, Color(0.8, 0.8, 0.85))
@@ -466,3 +470,73 @@ func _me() -> void:
 	var sv := _card()
 	_btn(sv, "Save game", func(): Game.save_game())
 	_btn(sv, "Load game", func(): main.load_game())
+
+
+# --- Wayfare: home goods ---------------------------------------------------------------
+
+const WAYFARE_COLOR := Color(0.45, 0.22, 0.55)
+
+
+func _wayfare() -> void:
+	_header("Wayfare", WAYFARE_COLOR, "Furniture that arrives in one more box than you expected.")
+	var home := Game.home()
+	var v := _card(Color(0.17, 0.13, 0.2))
+	if home.is_empty():
+		_lbl(v, "No address on file. Sign a lease to get deliveries.", 14, Color(1, 0.75, 0.6))
+	else:
+		_lbl(v, "%s  ·  %s" % [home.short, home.area], 15)
+		_live_label(v, func(n):
+			n.text = "Best bed: %d%% sleep quality\n%s: %d meals per grocery run ($%.2f a meal)\nComfort: %d (+%d%% sleep)     Space: %d / %d pieces" % [
+				roundi(Game.best_bed_quality() * 100.0), GameData.KITCHEN_NAMES[Game.kitchen_tier()], Game.grocery_meals(),
+				GameData.HOME_GROCERIES_PRICE / Game.grocery_meals(), Game.comfort(), roundi(Game.comfort_bonus() * 100.0),
+				Game.placed_furniture().size(), Game.home_space()], 13, Color(0.85, 0.82, 0.9))
+	# What you own and where it is.
+	var boxed := Game.boxed_furniture()
+	var placed := Game.placed_furniture()
+	if not boxed.is_empty() or not placed.is_empty():
+		var mine := _card()
+		_lbl(mine, "Your stuff", 16)
+		for f in boxed:
+			var uid := int(f.uid)
+			var row := HBoxContainer.new()
+			mine.add_child(row)
+			var l := _lbl(row, "📦 " + GameData.FURNITURE[f.id].name, 13)
+			l.custom_minimum_size.x = 170
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_live_button(row, "Place", func(): main.decor.begin(uid), func(): return main.decor.is_inside_home(), WAYFARE_COLOR)
+		if not boxed.is_empty():
+			_lbl(mine, "Boxes wait by your front door. Go inside to place them.", 12, Color(0.75, 0.75, 0.8))
+		for f in placed:
+			_lbl(mine, "✓ " + GameData.FURNITURE[f.id].name, 13, Color(0.7, 0.9, 0.7))
+		if not placed.is_empty():
+			_lbl(mine, "Walk up to a piece at home to move, box or sell it.", 12, Color(0.75, 0.75, 0.8))
+	# Catalog
+	var sections := [["bed", "Beds"], ["kitchen", "Kitchen"], ["coffee", "Kitchen"], ["decor", "Decor"]]
+	var last_title := ""
+	var card: VBoxContainer = null
+	for sec in sections:
+		if sec[1] != last_title:
+			last_title = sec[1]
+			card = _card()
+			_lbl(card, last_title, 16)
+		for id in GameData.FURNITURE_ORDER:
+			var info: Dictionary = GameData.FURNITURE[id]
+			if info.kind != sec[0]:
+				continue
+			_lbl(card, "%s  $%.0f" % [info.name, info.price], 14, Color(1, 0.92, 0.75))
+			_lbl(card, "%s  %s" % [_furniture_effect(id), info.blurb], 12, Color(0.78, 0.78, 0.82))
+			var item_id: String = id
+			_live_button(card, "Buy", func(): Game.buy_furniture(item_id),
+				func(): return Game.home_id != "" and Game.money >= float(GameData.FURNITURE[item_id].price), WAYFARE_COLOR)
+
+
+func _furniture_effect(id: String) -> String:
+	var info: Dictionary = GameData.FURNITURE[id]
+	match info.kind:
+		"bed":
+			return "Sleep x%.2f." % info.sleep
+		"kitchen":
+			return "%s: +%d meals per grocery run, bigger meals." % [GameData.KITCHEN_NAMES[info.kitchen], GameData.KITCHEN_EXTRA_MEALS[info.kitchen]]
+		"coffee":
+			return "+18 energy per cup."
+	return "+%d comfort." % info.comfort

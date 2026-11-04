@@ -255,6 +255,7 @@ func _ready() -> void:
 	Game.money = 1.0
 	main.load_game()
 	check(Game.money > 1000.0, "save/load round trip")
+	await _home_tests()
 
 	await frames(10)
 	print("\n%s: %d failure(s)" % ["PASSED" if failures == 0 else "FAILED", failures])
@@ -717,3 +718,59 @@ func _jump_tests() -> void:
 	check(landed, "landing bends the knees")
 	await frames(60)
 	check(h._air < 0.05, "back to normal after landing")
+
+
+func _home_tests() -> void:
+	print("Home goods")
+	if main.is_driving():
+		main.exit_car()
+	Game.money = 20000.0
+	check(Game.kitchen_tier() == 2 and Game.grocery_meals() == 10, "the house has a full kitchen (10 meals per grocery run)")
+	check(Game.sign_lease("room") and Game.kitchen_tier() == 0 and Game.grocery_meals() == GameData.HOME_GROCERIES_MEALS, "Dottie's room has only a mini fridge")
+	check(Game.buy_furniture("microwave") and Game.boxed_furniture().size() == 1, "bought a microwave (boxed)")
+	check(Game.kitchen_tier() == 0, "a boxed microwave doesn't count yet")
+	await frames(2)
+	var home: Dictionary = main.town.homes["room"]
+	check(home.furniture_root.get_child_count() > 0, "delivery boxes show up at home")
+	# Walk in and place it by hand, facing into the room.
+	var b: Node3D = home.building
+	main.player.global_position = home.inside
+	var f: Vector3 = b.global_basis * Vector3(0, 0, -1)
+	main.player.yaw = atan2(-f.x, -f.z)
+	await frames(10)
+	check(main.decor.is_inside_home(), "standing inside your home")
+	var uid := int(Game.boxed_furniture()[0].uid)
+	check(main.decor.begin(uid) and main.decor.placing, "placing mode starts")
+	await frames(3)
+	check(main.decor._valid, "the microwave fits in front of you (%s)" % main.decor._blocked_reason)
+	main.decor._confirm()
+	await frames(2)
+	check(not main.decor.placing and Game.placed_furniture().size() == 1, "placed the microwave")
+	check(Game.kitchen_tier() == 1 and Game.grocery_meals() == GameData.HOME_GROCERIES_MEALS + 2, "a microwave makes it a kitchenette")
+	var base_q: float = Game.bed_quality()
+	check(Game.buy_furniture("queen_bed"), "bought a queen bed")
+	var bed_uid := int(Game.boxed_furniture()[0].uid)
+	check(Game.place_furniture(bed_uid, 0.0, -1.0, 1), "placed the bed")
+	check(Game.best_bed_quality() > base_q + 0.1, "a better bed sleeps better (%d%% vs %d%%)" % [Game.best_bed_quality() * 100, base_q * 100])
+	check(Game.buy_furniture("plant") and Game.place_furniture(int(Game.boxed_furniture()[0].uid), -2.0, 1.0, 0), "placed a plant")
+	check(Game.comfort() == 1 and Game.comfort_bonus() > 0.0, "decor adds comfort")
+	check(Game.buy_furniture("lamp") and Game.place_furniture(int(Game.boxed_furniture()[0].uid), 2.0, 0.0, 0), "a fourth piece fits in Dottie's room")
+	check(Game.buy_furniture("rug") and not Game.place_furniture(int(Game.boxed_furniture()[0].uid), 0.0, 0.0, 0), "a fifth piece doesn't fit (space 4)")
+	await frames(2)
+	check(main.town.homes["room"].furniture_root.get_child_count() >= 4, "placed furniture is built in the room")
+	Game.fridge_meals = 1
+	Game.hunger = 10.0
+	check(Game.eat_at_home() and Game.hunger > 50.0 and Game.fridge_meals == 0, "microwaved leftovers fill you up (%d)" % Game.hunger)
+	var m0 := Game.money
+	var rug_uid := int(Game.boxed_furniture()[0].uid)
+	Game.sell_furniture(rug_uid)
+	check(Game.furniture_item(rug_uid).is_empty() and Game.money > m0, "sold the rug")
+	check(Game.sign_lease("studio") and Game.placed_furniture().is_empty() and Game.boxed_furniture().size() == 4, "moving boxes everything up")
+	Game.save_game()
+	Game.furniture = []
+	main.load_game()
+	check(Game.furniture.size() == 4 and Game.home_id == "studio", "furniture survives save/load")
+	main.phone.open_app("wayfare")
+	await frames(3)
+	check(main.phone._screen.get_child_count() > 3, "Wayfare app opens")
+	main.phone.close()

@@ -22,6 +22,7 @@ var weather_fx: WeatherFX
 var pedestrians: Pedestrians
 var pause_menu: PauseMenu
 var tutorial: Tutorial
+var decor: HomeDecor
 var auto_tutorial := true     # tests turn this off
 var _gps_timer := 0.0
 
@@ -89,6 +90,10 @@ func _ready() -> void:
 	pause_menu = PauseMenu.new()
 	pause_menu.main = self
 	add_child(pause_menu)
+	decor = HomeDecor.new()
+	decor.main = self
+	decor.town = town
+	add_child(decor)
 
 	var amb := AudioStreamPlayer.new()
 	amb.stream = Sfx.get_stream("ambience")
@@ -280,7 +285,10 @@ func _process(delta: float) -> void:
 				best_d = d
 				best_prompt = p
 	_current = best
-	if hud.menu_open:
+	if decor.placing:
+		_current = null
+		hud.set_prompt("" if hud.menu_open else decor.prompt_text())
+	elif hud.menu_open:
 		hud.set_prompt("")
 	elif best:
 		hud.set_prompt(best_prompt)
@@ -388,6 +396,8 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("pause") or event.is_action_pressed("back"):
 		if hud.menu_open:
 			hud.close_menu()
+		elif decor.placing:
+			decor.cancel()
 		elif phone.is_open:
 			if event.is_action_pressed("back") and phone.current_app != "":
 				phone.open_app("")
@@ -430,8 +440,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("interact") and not hud.menu_open:
-		if _current:
+	if event.is_action_pressed("interact") and not hud.menu_open and not decor.placing:
+		if is_instance_valid(_current):
 			_current.use()
 		elif driving:
 			exit_car()
@@ -495,11 +505,17 @@ func refresh_gps() -> void:
 	_update_gps(0.0, nav_target())
 
 
-func sleep_menu(quality: float) -> void:
-	hud.show_menu("Your bed. Sleep quality %d%%." % int(quality * 100), [
+## `extra`: more menu options (moving a bed you bought). `bed_name`: shown in the title.
+func sleep_menu(quality: float, extra: Array = [], bed_name := "Your bed") -> void:
+	var opts: Array = [
 		{"text": "Sleep until 6 AM (%.1f hours)" % Game.hours_until(6), "cb": func(): Game.sleep(Game.hours_until(6), quality)},
 		{"text": "Nap for 2 hours", "cb": func(): Game.sleep(2.0, quality)},
-	])
+	]
+	opts.append_array(extra)
+	var tip := ""
+	if quality + 0.01 < Game.best_bed_quality():
+		tip = "\nYour better bed sleeps at %d%%." % roundi(Game.best_bed_quality() * 100.0)
+	hud.show_menu("%s. Sleep quality %d%%.%s" % [bed_name, roundi(quality * 100), tip], opts)
 
 
 func sleep_in_car(hours: float) -> void:

@@ -11,6 +11,7 @@ signal home_changed
 signal slept(hours: float)
 signal bladder_accident
 signal bills_changed
+signal furniture_changed
 
 const SAVE_PATH := "user://savegame.json"
 
@@ -25,6 +26,7 @@ var phone_service := true
 var home_id := "room"
 var evicted := false
 var fridge_meals := 0
+var furniture: Array = []     # owned home goods: {uid, id, home ("" = boxed up), x, z, rot}
 var phone_pro := false       # upgraded phone: shows police on the minimap, slower battery drain
 
 var car_id := "rustwagon"
@@ -46,6 +48,7 @@ var sleeping := false
 
 var _warned := {}
 var _bill_seq := 0
+var _furniture_seq := 0
 var _passing_out := false
 
 
@@ -69,6 +72,8 @@ func new_game() -> void:
 	home_id = "room"
 	evicted = false
 	fridge_meals = 1
+	furniture = []
+	_furniture_seq = 0
 	phone_pro = false
 	car_id = "rustwagon"
 	var c: Dictionary = car()
@@ -86,6 +91,7 @@ func new_game() -> void:
 	money_changed.emit(money)
 	car_changed.emit()
 	home_changed.emit()
+	furniture_changed.emit()
 
 
 func _process(delta: float) -> void:
@@ -460,12 +466,14 @@ func process_bills() -> void:
 func _evict() -> void:
 	evicted = true
 	home_id = ""
+	_box_up_furniture()
 	for b in bills:
 		if b.kind == "rent" and not b.paid:
 			b.paid = true
 			b.name += " (sent to collections)"
 	notify("You've been EVICTED. You'll have to sleep in your car until you sign a new lease.", "bad")
 	home_changed.emit()
+	furniture_changed.emit()
 
 
 ## Missed car payments: the lender takes the car. You're left with a beat-up Punta from
@@ -501,14 +509,172 @@ func sign_lease(id: String) -> bool:
 		return false
 	home_id = id
 	evicted = false
+	var moved := _box_up_furniture()
 	# The first cycle's rent was paid at move-in; drop other unpaid upcoming rent.
 	for b in bills:
 		if b.kind == "rent" and not b.paid and not b.overdue:
 			b.paid = true
 			b.name += " (lease ended)"
 	notify("Welcome home! You moved into the " + h.name + ".", "good")
+	if moved > 0:
+		notify("Your %d piece(s) of furniture came along in boxes. Unbox them by the door." % moved, "info")
 	home_changed.emit()
 	bills_changed.emit()
+	furniture_changed.emit()
+	return true
+
+
+# --- Home goods --------------------------------------------------------------------
+# Furniture you own goes wherever you live. Placed pieces store their spot in the home's
+# own coordinates; moving or getting evicted boxes everything up again.
+
+func furniture_item(uid: int) -> Dictionary:
+	for f in furniture:
+		if int(f.uid) == uid:
+			return f
+	return {}
+
+
+## Pieces placed in a home (defaults to the one you live in).
+func placed_furniture(in_home := "") -> Array:
+	var hid := in_home if in_home != "" else home_id
+	if hid == "":
+		return []
+	return furniture.filter(func(f): return f.home == hid)
+
+
+func boxed_furniture() -> Array:
+	return furniture.filter(func(f): return f.home == "")
+
+
+func home_space() -> int:
+	return int(home().get("space", 0))
+
+
+func buy_furniture(id: String) -> bool:
+	var info: Dictionary = GameData.FURNITURE[id]
+	if home_id == "":
+		notify("Wayfare needs a delivery address. Sign a lease first.", "warn")
+		return false
+	if not spend(info.price, "Wayfare: " + info.name):
+		return false
+	_furniture_seq += 1
+	furniture.append({"uid": _furniture_seq, "id": id, "home": "", "x": 0.0, "z": 0.0, "rot": 0})
+	notify("%s delivered! The box is by your front door: unbox it to place it." % info.name, "good")
+	furniture_changed.emit()
+	return true
+
+
+func place_furniture(uid: int, x: float, z: float, rot: int) -> bool:
+	var f := furniture_item(uid)
+	if f.is_empty() or home_id == "":
+		return false
+	if f.home != home_id and placed_furniture().size() >= home_space():
+		notify("No room left here (%d pieces max). Box something up or move somewhere bigger." % home_space(), "warn")
+		return false
+	f.home = home_id
+	f.x = x
+	f.z = z
+	f.rot = posmod(rot, 4)
+	furniture_changed.emit()
+	return true
+
+
+func box_up_furniture(uid: int) -> void:
+	var f := furniture_item(uid)
+	if not f.is_empty():
+		f.home = ""
+		furniture_changed.emit()
+
+
+func furniture_resale(id: String) -> float:
+	return roundf(float(GameData.FURNITURE[id].price) * GameData.FURNITURE_RESALE)
+
+
+func sell_furniture(uid: int) -> void:
+	var f := furniture_item(uid)
+	if f.is_empty():
+		return
+	var info: Dictionary = GameData.FURNITURE[f.id]
+	furniture.erase(f)
+	earn(furniture_resale(f.id), "Sold on Craigslust: " + info.name)
+	furniture_changed.emit()
+
+
+func _box_up_furniture() -> int:
+	var n := 0
+	for f in furniture:
+		if f.home != "":
+			f.home = ""
+			n += 1
+	return n
+
+
+## Kitchen tier where you live: the home's own kitchen or your best appliance.
+func kitchen_tier() -> int:
+	if home_id == "":
+		return 0
+	var tier := int(home().get("kitchen", 0))
+	for f in placed_furniture():
+		tier = maxi(tier, int(GameData.FURNITURE[f.id].get("kitchen", 0)))
+	return tier
+
+
+func has_coffee_maker() -> bool:
+	return placed_furniture().any(func(f): return GameData.FURNITURE[f.id].kind == "coffee")
+
+
+func comfort() -> int:
+	var c := 0
+	for f in placed_furniture():
+		c += int(GameData.FURNITURE[f.id].get("comfort", 0))
+	return c
+
+
+func comfort_bonus() -> float:
+	return minf(GameData.COMFORT_MAX_BONUS, comfort() * GameData.COMFORT_PER_POINT)
+
+
+## Sleep quality in a bed at home: how quiet the home is, times the bed, plus decor comfort.
+## bed_id "" is the bed that came with the place.
+func bed_quality(bed_id := "") -> float:
+	if home_id == "":
+		return 0.55
+	var mult := 1.0
+	if bed_id != "":
+		mult = float(GameData.FURNITURE[bed_id].get("sleep", 1.0))
+	return float(home().sleep_quality) * mult + comfort_bonus()
+
+
+## Sleep quality in the best bed you have at home.
+func best_bed_quality() -> float:
+	var best := bed_quality()
+	for f in placed_furniture():
+		if GameData.FURNITURE[f.id].kind == "bed":
+			best = maxf(best, bed_quality(f.id))
+	return best
+
+
+## Meals a $32 grocery run gives you: a better kitchen makes them stretch further.
+func grocery_meals() -> int:
+	return GameData.HOME_GROCERIES_MEALS + GameData.KITCHEN_EXTRA_MEALS[kitchen_tier()]
+
+
+func eat_at_home() -> bool:
+	if home_id == "" or fridge_meals <= 0:
+		return false
+	var meal: Array = GameData.KITCHEN_MEALS[kitchen_tier()]
+	fridge_meals -= 1
+	advance(meal[2])
+	eat(meal[0], meal[1])
+	return true
+
+
+func brew_coffee() -> bool:
+	if not spend(GameData.HOME_COFFEE_PRICE, "Coffee at home"):
+		return false
+	advance(5.0)
+	eat("a fresh cup of home-brewed coffee", 0.0, 18.0)
 	return true
 
 
@@ -692,6 +858,7 @@ func save_game() -> void:
 		"engine_health": engine_health, "odometer": odometer, "bills": bills,
 		"transactions": transactions, "stats": stats, "bill_seq": _bill_seq,
 		"ratings": Gigs.ratings, "phone_pro": phone_pro, "loan": loan,
+		"furniture": furniture, "furniture_seq": _furniture_seq,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -721,6 +888,12 @@ func load_game() -> bool:
 	evicted = bool(data.get("evicted", false))
 	fridge_meals = int(data.get("fridge_meals", 0))
 	phone_pro = bool(data.get("phone_pro", false))
+	furniture = []
+	for f in data.get("furniture", []):
+		if typeof(f) == TYPE_DICTIONARY and GameData.FURNITURE.has(str(f.get("id", ""))):
+			furniture.append({"uid": int(f.get("uid", 0)), "id": str(f.id), "home": str(f.get("home", "")),
+				"x": float(f.get("x", 0.0)), "z": float(f.get("z", 0.0)), "rot": int(f.get("rot", 0))})
+	_furniture_seq = int(data.get("furniture_seq", furniture.size()))
 	loan = data.get("loan", {})
 	if not loan.is_empty():
 		loan.left = int(loan.left)
@@ -740,6 +913,7 @@ func load_game() -> bool:
 	car_changed.emit()
 	home_changed.emit()
 	bills_changed.emit()
+	furniture_changed.emit()
 	notify("Game loaded.", "info")
 	return true
 

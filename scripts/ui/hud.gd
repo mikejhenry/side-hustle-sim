@@ -322,11 +322,12 @@ WASD or arrows / left stick: walk or drive      Mouse / right stick: look
 Gamepad driving: RT gas, LT brake and reverse, left stick steers
 Shift / L3: sprint        Space / A: jump or handbrake
 E / X: interact, get in or out of the car
-Tab or P / Y: phone (gig apps, bank, garage, maps)     A: pick   B: back
+Tab or P / Y: phone (gig apps, bank, garage, maps, Wayfare)     A: pick   B: back
 C / LB: driving camera (first person / chase)     M / D-pad up: mirror mode
 L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
 G / D-pad right: full map     Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
 F5: save        F9: load
+Placing furniture at home: walk to aim, R / D-pad down turns it, E / X sets it down, Esc / B cancels
 
 THE LAW
 Speed limit is 30 mph in town and 45 on the beltway. Police only notice

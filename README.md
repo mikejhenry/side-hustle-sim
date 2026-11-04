@@ -82,6 +82,15 @@ higher pay.
   door (15% down, then 12 monthly payments at 23.9% APR on a marked-up price, so it costs more in
   the end; miss a payment and they repossess it). Better homes at the leasing desks of Maple
   Court, Lakeview Towers, and the Brandywine Hills house.
+- **Your place**: each home is in its own neighborhood (Elsmore Flats, Trolly Squared, Christeena
+  Riverfront, Brandywine Hills) with its own kitchen (mini fridge, kitchenette, or full kitchen) and
+  room for more furniture (4, 7, 11, or 18 pieces). Buy furniture, appliances, and decor in the
+  **Wayfare** phone app. It's delivered in boxes by your front door; unbox a piece and walk it
+  where you want it (green = fits, red = blocked), R / D-pad down to turn it, E / X to set it down.
+  Walk up to a piece later to move, box, or sell it. Better beds sleep better, a microwave or stove
+  makes groceries stretch further (up to 10 meals per run) and fills you up more, a coffee maker
+  brews 40-cent coffee, and decor adds comfort (up to +15% sleep quality). Your stuff comes with
+  you when you move.
 
 **Turn-by-turn GPS.** Any job or Maps waypoint gets a blue route on the minimap and a
 next-turn banner at the top of the screen ("Turn left onto Market St, 0.3 mi").
