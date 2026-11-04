@@ -138,6 +138,19 @@ slippery (snow is worst), and snow whitens the grass. Bad weather pays: food del
 the biggest boost (+30% rain, +45% storm, +50% snow), groceries and rides a bit less, Jungle Flex
 only a few percent. The clock line on the HUD shows the current weather.
 
+**Day and night.** The sun rises at 6 AM and sets at 6 PM, with an orange glow on the horizon
+at dawn and dusk. When it gets dark the streetlights come on, shop windows, houses and apartments
+light up, every car in traffic turns on its headlights and taillights, and your own headlights
+switch on by themselves (L still toggles them).
+
+**Rush hour and late nights.** On weekdays the roads fill up from 7 to 9 AM and 4 to 6 PM, and
+nearly empty out in the small hours (weekends are calmer). From 10 PM to 4 AM, Yoober and Drift
+pay a +30% late-night surge (purple bars on the app's peak chart), but about half the riders are
+rowdy: they shout and sing along the way, and the ride might end in a big tip, a spilled drink
+(the app pays a cleaning fee, but cleaning takes you 15 minutes), a grumpy rating, or a nap.
+
+![Dusk](docs/screenshots/26_dusk.png)
+
 **Pedestrians** walk the sidewalks around the blocks, stopping now and then and when you're in
 their way.
 

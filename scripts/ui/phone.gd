@@ -279,7 +279,7 @@ func _gig_app(id: String) -> void:
 
 
 func _demand_chart(parent: Node, id: String) -> void:
-	_lbl(parent, "Peak times today (hour 0-23):", 12, Color(0.75, 0.75, 0.8))
+	_lbl(parent, "Peak times today (hour 0-23)%s:" % (", purple = late-night surge" if Gigs.app(id).kind == "ride" else ""), 12, Color(0.75, 0.75, 0.8))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 2)
 	row.custom_minimum_size.y = 40
@@ -290,11 +290,16 @@ func _demand_chart(parent: Node, id: String) -> void:
 		holder.alignment = BoxContainer.ALIGNMENT_END
 		holder.custom_minimum_size = Vector2(10, 40)
 		row.add_child(holder)
+		# Ride apps: the late-night surge hours show in purple.
+		var night: bool = Gigs.app(id).kind == "ride" and Game.is_late_night(h)
+		if night:
+			s *= GameData.LATE_NIGHT_SURGE
+		var base := Color(0.65, 0.4, 1.0) if night else (Color(1, 0.55, 0.15) if s > 1.0 else Color(0.35, 0.35, 0.4))
 		var bar := ColorRect.new()
 		bar.custom_minimum_size = Vector2(10, 10.0 + (s - 1.0) * 30.0)
-		bar.color = Color(1, 0.55, 0.15) if s > 1.0 else Color(0.35, 0.35, 0.4)
+		bar.color = base
 		holder.add_child(bar)
-		var fn := func(n): n.color = Color(0.3, 1, 0.4) if Game.hour() == h else (Color(1, 0.55, 0.15) if s > 1.0 else Color(0.35, 0.35, 0.4))
+		var fn := func(n): n.color = Color(0.3, 1, 0.4) if Game.hour() == h else base
 		_live.append({"node": bar, "fn": fn})
 
 
@@ -306,6 +311,8 @@ func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 			_lbl(v, "%s • %.1f mi trip • pickup %.1f mi away%s" % [o.passenger, o.miles, o.pickup_miles,
 				" • %s surge +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
 			_lbl(v, "From: %s\nTo: %s" % [o.pickup.name, o.dropoff.name], 13, Color(0.85, 0.85, 0.9))
+			if o.get("night_pay", 0.0) > 0.0:
+				_lbl(v, "Late-night surge +$%.2f%s" % [o.night_pay, " • Rider may be rowdy" if o.get("rowdy", false) else ""], 13, Color(0.75, 0.6, 1.0))
 		"food":
 			_lbl(v, "%.1f mi total • incl. $%.0f tip%s%s" % [o.miles, o.tip, " • Peak Pay +$%.2f" % o.peak_pay if o.peak_pay > 0 else "",
 				" • %s boost +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)

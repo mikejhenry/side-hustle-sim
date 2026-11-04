@@ -50,6 +50,33 @@ static func glass() -> StandardMaterial3D:
 	return _glass
 
 
+## Window glass that glows warmly after dark. kind: "shop" (bright storefronts), "home"
+## (warm lamp light), "apt" (cooler, TV-ish). The glow is set for all of them at once by
+## set_window_glow(), so lighting up a whole town costs nothing per window.
+static var _lit := {}
+const LIT_COLORS := {"shop": [Color(1.0, 0.86, 0.62), 0.55], "home": [Color(1.0, 0.65, 0.3), 0.6],
+	"apt": [Color(0.7, 0.75, 1.0), 0.45]}
+
+
+static func lit_glass(kind := "shop") -> StandardMaterial3D:
+	if not _lit.has(kind):
+		var m := glass().duplicate() as StandardMaterial3D
+		m.emission_enabled = true
+		m.emission = LIT_COLORS[kind][0]
+		m.emission_energy_multiplier = 0.0
+		_lit[kind] = m
+	return _lit[kind]
+
+
+## 0 = daytime (plain glass), 1 = full night glow.
+static func set_window_glow(amount: float) -> void:
+	for kind in _lit:
+		var m: StandardMaterial3D = _lit[kind]
+		m.emission_energy_multiplier = amount * float(LIT_COLORS[kind][1])
+		# Lit windows look less like mirrors.
+		m.metallic = lerpf(0.6, 0.1, amount)
+
+
 static func _resolve(c, emission := 0.0) -> Material:
 	if c is Material:
 		return c
@@ -185,7 +212,7 @@ static func hollow_building(parent: Node, size: Vector3, wall, roof,
 		var wh := minf(2.2, h - 1.6)
 		for sx in [-1.0, 1.0]:
 			var cx: float = sx * (door_w / 2 + side_w / 2)
-			box(b, Vector3(ww, wh, 0.06), Vector3(cx, 1.0 + wh / 2, d / 2 + 0.03), glass(), false)
+			box(b, Vector3(ww, wh, 0.06), Vector3(cx, 1.0 + wh / 2, d / 2 + 0.03), lit_glass("shop"), false)
 			box(b, Vector3(ww + 0.2, 0.12, 0.14), Vector3(cx, 1.0 + wh + 0.06, d / 2 + 0.06), Color(0.15, 0.15, 0.16), false)
 			box(b, Vector3(ww + 0.3, 0.1, 0.25), Vector3(cx, 0.95, d / 2 + 0.1), Color(0.15, 0.15, 0.16), false)
 		# door frame
@@ -247,6 +274,18 @@ static func beacon(color: Color) -> Node3D:
 	dot.layers = 2   # minimap only
 	root.add_child(dot)
 	return root
+
+
+## Apartment window panes: about half are lit at night (warm or bluish), the rest stay dark.
+## Still only three draw calls.
+static func lit_panes(parent: Node, size: Vector3, transforms: Array, rng: RandomNumberGenerator) -> void:
+	var groups := {"dark": [], "home": [], "apt": []}
+	for t in transforms:
+		var r := rng.randf()
+		groups["home" if r < 0.3 else ("apt" if r < 0.5 else "dark")].append(t)
+	for k in groups:
+		if not groups[k].is_empty():
+			multibox(parent, size, groups[k], glass() if k == "dark" else lit_glass(k))
 
 
 ## Many identical boxes in one draw call (lane dashes, window panes, crosswalks).
