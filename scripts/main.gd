@@ -45,6 +45,7 @@ func _ready() -> void:
 	player.yaw = PI   # face the street
 
 	car = Car.new()
+	car.main = self
 	add_child(car)
 	car.teleport(town.car_spawn)
 	_enter_point = Kit.interactable(car, Vector3(1.4, 1, 0.2), 2.6,
@@ -279,6 +280,10 @@ func _process(delta: float) -> void:
 				best = it
 				best_d = d
 				best_prompt = p
+	# Looking at a dashboard control beats anything outside the car.
+	if driving and car.dash.focused:
+		best = car.dash.focused
+		best_prompt = best.get_prompt()
 	_current = best
 	if hud.menu_open:
 		hud.set_prompt("")
@@ -421,6 +426,8 @@ func _input(event: InputEvent) -> void:
 		hud.toast("Weather: %s" % ("forecast" if Game.weather_override == "" else Game.weather_override), "info")
 	elif event.is_action_pressed("camera_toggle") and driving:
 		car.toggle_camera()
+	elif driving and not hud.menu_open and _car_control(event):
+		pass
 	elif event.is_action_pressed("headlights") and driving:
 		car.set_headlights(not car.headlights_on)
 	elif event.is_action_pressed("mirrors") and driving:
@@ -429,12 +436,37 @@ func _input(event: InputEvent) -> void:
 		hud.toast("Mirrors: %s (%s to change)" % [["in the car", "in the car + on screen", "off"][Game.mirror_mode], Game.key("mirrors")], "info")
 
 
+## Turn signals, hazards, wipers and radio keys while driving. True if the event was one.
+func _car_control(event: InputEvent) -> bool:
+	var d: Dashboard = car.dash
+	if event.is_action_pressed("signal_left"):
+		d.set_signal("left")
+	elif event.is_action_pressed("signal_right"):
+		d.set_signal("right")
+	elif event.is_action_pressed("signal_cycle") and not phone.is_open:
+		d.cycle_signal()
+	elif event.is_action_pressed("hazards"):
+		d.toggle_hazards()
+	elif event.is_action_pressed("wipers"):
+		d.cycle_wipers()
+	elif event.is_action_pressed("radio_next"):
+		car.radio.next_station()
+	elif event.is_action_pressed("radio_prev"):
+		car.radio.prev_station()
+	else:
+		return false
+	return true
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact") and not hud.menu_open:
 		if _current:
 			_current.use()
 		elif driving:
 			exit_car()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and driving and car.dash.focused and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		car.dash.focused.use()
 	elif event is InputEventMouseButton and event.pressed and not phone.is_open and not hud.menu_open and not pause_menu.is_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

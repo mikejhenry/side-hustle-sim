@@ -112,6 +112,7 @@ func _ready() -> void:
 	await _light_tests(tr)
 	await _strip_tests()
 	await _weather_tests()
+	await _driving_feel_tests()
 	await _map_tests()
 	await _jump_tests()
 
@@ -518,6 +519,204 @@ func _weather_tests() -> void:
 	check(not main.weather_fx._snow.emitting and Game.weather_boost("food") == 1.0, "clear again")
 	Game.weather_override = ""
 	Game._update_weather()
+
+
+# --- Driving feel: weather grip, signals, wipers, dashboard, radio, GPS mount --------------
+
+const TEST_ROAD := Vector3(182.0, 0.6, 60.0)   # a straight stretch heading +Z
+
+
+func _place_test_car(car, speed: float) -> void:
+	car.teleport(Transform3D(Basis.IDENTITY, TEST_ROAD))
+	await frames(20)
+	car.linear_velocity = car.global_basis.z * speed
+	await frames(1)
+
+
+## Distance to stop from 20 m/s with full brakes.
+func _stopping_distance(car) -> float:
+	await _place_test_car(car, 20.0)
+	var from: Vector3 = car.global_position
+	Input.action_press("move_back")
+	var n := 0
+	while car.linear_velocity.dot(car.global_basis.z) > 0.5 and n < 600:
+		await frames(1)
+		n += 1
+	Input.action_release("move_back")
+	return Vector2(car.global_position.x - from.x, car.global_position.z - from.z).length()
+
+
+## Largest sideways slide during a hard turn on the gas.
+func _turn_slip(car) -> float:
+	await _place_test_car(car, 14.0)
+	Input.action_press("move_forward")
+	Input.action_press("move_left")
+	var most := 0.0
+	for i in 90:
+		await frames(1)
+		most = maxf(most, car.slip_speed)
+	Input.action_release("move_left")
+	Input.action_release("move_forward")
+	return most
+
+
+func _driving_feel_tests() -> void:
+	print("Driving feel")
+	var car: Car = main.car
+	var d: Dashboard = car.dash
+	main.traffic.process_mode = Node.PROCESS_MODE_DISABLED
+	main.pedestrians.process_mode = Node.PROCESS_MODE_DISABLED
+	Game.using_pad = false
+	main.enter_car()
+	var tread := Game.tire_tread
+	Game.tire_tread = 100.0
+	Game.weather_override = "clear"
+	Game._update_weather()
+	var dry_stop: float = await _stopping_distance(car)
+	var dry_slip: float = await _turn_slip(car)
+	Game.weather_override = "snow"
+	Game._update_weather()
+	Game.weather_amount = 1.0
+	var snow_stop: float = await _stopping_distance(car)
+	var snow_slip: float = await _turn_slip(car)
+	print("  stopping from 45 mph: dry %.1f m, snow %.1f m; slide in a hard turn: dry %.1f m/s, snow %.1f m/s" % [dry_stop, snow_stop, dry_slip, snow_slip])
+	check(snow_stop > dry_stop * 1.2, "snow takes longer to stop")
+	check(snow_slip > dry_slip, "the car slides more on snow")
+	check(car.global_basis.y.y > 0.8, "still upright after sliding")
+	# Rain: worn tires hydroplane at speed through standing water; slow and new tires don't.
+	Game.weather_override = "storm"
+	Game._update_weather()
+	Game.weather_amount = 1.0
+	check(car.hydroplane_mph() > 30.0, "new tires hydroplane only above %.0f mph" % car.hydroplane_mph())
+	await _place_test_car(car, 13.0)
+	var hydro := false
+	for i in 180:
+		car.linear_velocity = car.global_basis.z * 13.0
+		await frames(1)
+		hydro = hydro or car.hydroplaning > 0.0
+	check(not hydro, "no hydroplaning at 29 mph on new tires")
+	Game.tire_tread = 10.0
+	await _place_test_car(car, 22.0)
+	for i in 240:
+		car.linear_velocity = car.global_basis.z * 22.0
+		await frames(1)
+		hydro = hydro or car.hydroplaning > 0.0
+	check(hydro, "bald tires hydroplane at 49 mph in a storm (above %.0f mph)" % car.hydroplane_mph())
+	check(car.hydroplane_risk(), "the HUD warns about hydroplaning")
+	Game.tire_tread = 100.0
+	car.hydroplaning = 0.0
+
+	# Wipers: drops build up on the glass, the wipers clear them.
+	Game.weather_override = "rain"
+	Game._update_weather()
+	Game.weather_amount = 1.0
+	var ws: Windshield = main.hud.windshield
+	ws.drops.clear()
+	if d.wiper_mode != 0:
+		d.wiper_mode = 0
+	await _place_test_car(car, 0.0)
+	await frames(180)
+	var wet: float = ws.coverage()
+	d.cycle_wipers()
+	var wiped := 0.0
+	for i in 240:
+		await frames(1)
+		wiped += ws.coverage() / 240.0
+	print("  windshield: %.0f%% covered, %.0f%% on average with the wipers on" % [wet * 100.0, wiped * 100.0])
+	check(wet > 0.2 and wiped < wet * 0.8, "rain covers the windshield and the wipers clear it")
+	d.wiper_mode = 2
+	d.cycle_wipers()
+	check(d.wiper_mode == 0, "wipers: off, on, fast, off")
+
+	# Turn signals: blink, and cancel themselves after the turn.
+	Game.weather_override = "clear"
+	Game._update_weather()
+	d.set_signal("left")
+	check(d.signal_dir == "left" and d.blink_on, "left signal on")
+	var toggled := false
+	for i in 40:
+		await frames(1)
+		toggled = toggled or not d.blink_on
+	check(toggled, "signal blinks")
+	await _place_test_car(car, 7.0)
+	Input.action_press("move_left")
+	Input.action_press("move_forward")
+	await frames(90)
+	Input.action_release("move_left")
+	Input.action_release("move_forward")
+	check(d.signal_dir == "left", "signal stays on through the turn")
+	await frames(60)
+	check(d.signal_dir == "", "signal cancels after the turn")
+	d.set_signal("right")
+	d.set_signal("right")
+	check(d.signal_dir == "", "pressing the same signal again cancels it")
+	d.cycle_signal()
+	d.cycle_signal()
+	check(d.signal_dir == "right", "D-pad cycles left, right")
+	d.cycle_signal()
+	d.toggle_hazards()
+	check(d.hazards, "hazards on")
+	d.toggle_hazards()
+
+	# Dashboard: look at a control and press interact.
+	await _place_test_car(car, 0.0)
+	var r: Radio = car.radio
+	r.set_station(1)
+	var target: Interactable = null
+	for it in d._controls:
+		if it.get_prompt().begins_with("Radio: next"):
+			target = it
+	check(target != null, "dashboard has a next-station button")
+	var local: Vector3 = car.to_local(target.global_position) - car.fp_camera.position
+	local = local.normalized()
+	car._look_yaw = atan2(local.x, local.z)
+	car._look_pitch = asin(local.y)
+	await frames(3)
+	await get_tree().process_frame
+	check(d.focused == target, "looking at the button focuses it")
+	check(main.hud._prompt.text.contains("Radio: next station"), "prompt names the control: %s" % main.hud._prompt.text)
+	main._current.use()
+	check(r.station == 2, "the button changes the station (now %s)" % r.display_text())
+	car._look_yaw = 0.0
+	car._look_pitch = -0.08
+	await frames(3)
+	await get_tree().process_frame
+	check(d.focused == null, "looking at the road focuses nothing")
+
+	# Radio: music renders on a worker thread, then plays; DJs and ads talk over it.
+	var waited := 0
+	while not r.is_ready(r.current().style) and waited < 900:
+		await get_tree().process_frame
+		waited += 1
+	check(r.is_ready(r.current().style), "station music is ready (%s)" % r.current().style)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(r._music.playing, "radio plays while driving")
+	r._next_segment = 0.0
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(r.caption != "" and main.hud._radio_panel.visible, "DJ / ad caption shows: %s: %s" % [r.caption_who, r.caption])
+	for i in Radio.STATIONS.size() + 1:
+		r.next_station()
+	check(r.power, "radio cycles through every station and off, then back on")
+	r.toggle_power()
+	check(not r.power, "radio off")
+	await get_tree().process_frame
+	check(not r._music.playing, "silent when off")
+	r.toggle_power()
+	main.exit_car()
+	await get_tree().process_frame
+	check(not r._music.playing, "radio stops when you get out")
+
+	# GPS mount.
+	check(d.phone_screen != null and d.gps_mount, "phone is on the GPS mount")
+	main.traffic.process_mode = Node.PROCESS_MODE_INHERIT
+	main.pedestrians.process_mode = Node.PROCESS_MODE_INHERIT
+	Game.weather_override = ""
+	Game._update_weather()
+	Game.tire_tread = tread
+	main.car.teleport(main.town.car_spawn)
+	await frames(10)
 
 
 func _pedestrian_tests() -> void:
