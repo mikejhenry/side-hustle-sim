@@ -123,6 +123,7 @@ func _ready() -> void:
 	check(true, "all phone screens built")
 
 	print("DoorDish job")
+	Gigs.random_events = false  # no wrong addresses or spills here; _customer_tests covers them
 	Gigs.set_online("doordish", true)
 	Gigs._make_offer("doordish")
 	var o: Dictionary = Gigs.offers.back()
@@ -212,6 +213,8 @@ func _ready() -> void:
 			if Gigs.job.get("stops", []).size() == n:
 				break
 		check(Gigs.job.is_empty(), "block complete")
+
+	await _customer_tests()
 
 	print("Needs, bills, sleep")
 	Game.bladder = 50.0
@@ -717,3 +720,125 @@ func _jump_tests() -> void:
 	check(landed, "landing bends the knees")
 	await frames(60)
 	check(h._air < 0.05, "back to normal after landing")
+
+
+func _customer_tests() -> void:
+	print("Customers and ratings")
+	if main.is_driving():
+		main.exit_car()
+	Gigs.go_offline_all()
+	Gigs.job = {}
+	var seen := {}
+	for i in 60:
+		Gigs._make_offer("doordish")
+		var o: Dictionary = Gigs.offers.back()
+		seen[o.personality] = o.customer_rating
+		Gigs.decline(o.id)
+	check(seen.size() >= 4, "customers have personalities (%s)" % ", ".join(PackedStringArray(seen.keys())))
+	# Platinum: priority offers pay more and never send rude customers.
+	Gigs.ratings.doordish = 4.95
+	check(Gigs.tier("doordish")[1] == "Platinum", "4.95 is Platinum")
+	var rude := 0
+	var priority := true
+	for i in 60:
+		Gigs._make_offer("doordish")
+		var o: Dictionary = Gigs.offers.back()
+		if o.personality == "rude":
+			rude += 1
+		priority = priority and o.priority and o.tier_pay > 0.0
+		Gigs.decline(o.id)
+	check(rude == 0 and priority, "Platinum offers are priority, pay more, no rude customers")
+	Gigs.ratings.doordish = 4.4
+	Gigs._make_offer("doordish")
+	var low: Dictionary = Gigs.offers.back()
+	check(low.tier_pay < 0.0 and not low.priority, "At risk offers pay less ($%.2f)" % low.tier_pay)
+	Gigs.decline(low.id)
+	main.phone.open_app("doordish")
+	await frames(2)
+	main.phone.close()
+
+	# Wrong address, then the tip is taken back after delivery.
+	Gigs.ratings.doordish = 4.8
+	Gigs._make_offer("doordish")
+	Gigs.accept(Gigs.offers.back().id)
+	Gigs.job.personality = "friendly"
+	Gigs.job.events = ["wrong_address", "tip_bait"]
+	Gigs.job.stage = "to_customer"
+	var first: String = Gigs.job.customer.name
+	var pay0: float = Gigs.job.pay
+	Gigs.leave_at_door()
+	check(Gigs.job.stage == "to_customer" and Gigs.job.customer.name != first and Gigs.job.pay > pay0,
+		"wrong address: new door (%s) and +$%.2f" % [Gigs.job.customer.name, Gigs.job.pay - pay0])
+	Gigs.leave_at_door()
+	check(Gigs.job.stage == "confirm_photo", "left at the right door")
+	main.player.global_position = Gigs.job.customer.door
+	await frames(3)
+	Gigs.job.tip = 5.0
+	var pay1: float = Gigs.job.pay
+	var money0: float = Game.money
+	Gigs.confirm_photo()
+	var earned: float = Game.money - money0
+	check(Gigs.job.is_empty() and absf(earned - (pay1 - 5.0)) < 0.02, "tip bait: paid $%.2f without the $5 tip" % earned)
+	check(Gigs.recent.doordish.front() == 5, "rating recorded (%s)" % str(Gigs.recent.doordish))
+
+	# A food spill on a hard crash costs the tip and stars.
+	Gigs.random_events = true
+	Gigs._make_offer("doordish")
+	Gigs.accept(Gigs.offers.back().id)
+	Gigs.job.events = []
+	Gigs.job.stage = "to_customer"
+	for i in 20:
+		Gigs.on_crash(20.0)
+	check(Gigs.job.spilled, "a hard crash can spill the drink")
+	Gigs.random_events = false
+	Gigs.job = {}
+
+	# Ride: the passenger changes the drop-off and spills a drink.
+	Gigs._make_offer("yoober")
+	Gigs.accept(Gigs.offers.filter(func(x): return x.app == "yoober").back().id)
+	var now: float = Game.total_minutes()
+	Gigs.job.stage = "to_dropoff"
+	Gigs.job.events = ["new_stop", "spill"]
+	Gigs.job.trip_start = now - 10.0
+	Gigs.job.new_stop_at = 0.0
+	Gigs.job.spill_at = 0.0
+	Gigs.job.next_chat = now + 100.0
+	var drop0: String = Gigs.job.dropoff.name
+	pay0 = Gigs.job.pay
+	Game.money = 500.0
+	Gigs._job_events(now)
+	check(Gigs.job.dropoff.name != drop0 and Gigs.job.pay > pay0, "new drop-off: %s, fare +$%.2f" % [Gigs.job.dropoff.name, Gigs.job.pay - pay0])
+	check(Gigs.job.get("cleaning_fee", 0.0) > 0.0 and Game.money < 500.0, "spill: cleaning fee, seat shampoo paid")
+	Gigs.job = {}
+
+	# Rider cancels on the way: a small fee, no rating hit.
+	Gigs._make_offer("drift")
+	Gigs.accept(Gigs.offers.filter(func(x): return x.app == "drift").back().id)
+	Gigs.job.events = ["rider_cancel"]
+	Gigs.job.accepted_at = now - 5.0
+	var r0: float = Gigs.ratings.drift
+	money0 = Game.money
+	Gigs._job_events(now)
+	check(Gigs.job.is_empty() and Game.money > money0 and Gigs.ratings.drift == r0, "rider cancelled: $%.2f fee" % (Game.money - money0))
+
+	# Deactivation and the course to get back on.
+	Gigs.set_online("doordish", true)
+	Gigs.ratings.doordish = 4.32
+	Gigs._rate("doordish", 1.0)
+	check(Gigs.deactivated.has("doordish") and not Gigs.online.doordish and Gigs.ineligible_reason("doordish") != "",
+		"deactivated at %.2f" % Gigs.ratings.doordish)
+	Gigs.set_online("doordish", true)
+	check(not Gigs.online.doordish and not Gigs.can_appeal("doordish"), "can't go online, appeal opens tomorrow")
+	main.phone.open_app("doordish")
+	await frames(2)
+	main.phone.close()
+	var st: Dictionary = JSON.parse_string(JSON.stringify(Gigs.save_state()))
+	Gigs.deactivated = {}
+	Gigs.load_state(st)
+	check(Gigs.deactivated.has("doordish"), "deactivation survives save/load")
+	Gigs.deactivated.doordish = Game.day
+	Game.money = 500.0
+	check(Gigs.appeal("doordish") and not Gigs.deactivated.has("doordish") and Gigs.ratings.doordish >= 4.6 \
+		and Gigs.ineligible_reason("doordish") == "", "Driver Quality Course reactivates (%.2f)" % Gigs.ratings.doordish)
+	Gigs.go_offline_all()
+	Gigs.ratings.doordish = CustomerData.START_RATING

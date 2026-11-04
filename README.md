@@ -69,6 +69,25 @@ gig. Skip or restart it from the pause menu.
 Each app has its own peak hours (shown as a bar chart in the app). Peak hours mean more offers and
 higher pay.
 
+**Customers.** Every ride and delivery comes with a customer you can read on the offer: their
+name, their own star rating, and a personality. Friendly, chatty (they talk the whole ride),
+quiet, in a hurry (tighter deadline, bonus tip if you make it), picky (crashes cost double),
+rude (stingy, rarely five stars), big tippers, and late-night partiers (10 PM to 3 AM, generous
+but messy). Delivery orders carry a note from the customer.
+
+**Things go wrong.** A passenger spills a drink (they pay a cleaning fee, you pay for seat
+shampoo), asks for a different drop-off (the fare goes up), or cancels while you're on the way
+(small fee). A delivery customer realizes they gave the wrong address, an Instacrate item is out
+of stock, a hard crash spills the drink in the bag (bye, tip), or the customer takes the tip back
+after you deliver.
+
+**Star rating.** Each app keeps its own rating, and every job moves it a little. Platinum
+(4.85+) gets priority offers with +15% pay and no rude customers. Gold (4.70+) is normal.
+Silver (4.50+) sees fewer offers. Below 4.50 you're at risk: offers pay 10% less and the app
+warns you. Below 4.30 you're deactivated. Wait a day, then pay for the Driver Quality Course in
+the app to get back on at 4.60. The app shows your tier and your latest ratings. All the numbers
+and lines live in `scripts/data/customer_data.gd`.
+
 ## Life systems
 
 - **Hunger, bladder, energy.** Eat at restaurants, WahWah, or from your fridge. Use restrooms
@@ -154,6 +173,7 @@ scripts/main.gd           Wires world, player, car, HUD, phone; walking <-> driv
 scripts/autoload/game.gd  Clock, money, needs, bills, housing, car condition, save/load, input map
 scripts/autoload/gigs.gd  Gig apps: online state, offers, peak times, job state machine
 scripts/data/game_data.gd All tunable data (cars, homes, apps, menus, rates)
+scripts/data/customer_data.gd  Customer personalities, their lines, job events, rating tiers
 scripts/world/town.gd     Procedural New Castlewood County map, buildings, interiors
 scripts/world/kit.gd      Box/label/building/material helpers
 scripts/world/gps.gd      Turn-by-turn routing on the street grid

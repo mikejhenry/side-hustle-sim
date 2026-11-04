@@ -6,6 +6,11 @@ extends Node
 ##   food:    to_restaurant -> (counter: pick up) -> to_customer -> (door) -> confirm_photo -> (phone)
 ##   grocery: to_store -> shopping (shelves) -> checkout (register) -> to_customer -> (door) -> confirm_photo
 ##   flex:    to_station -> (phone: Scan packages at loading zone) -> delivering (doors) -> done
+##
+## Rides, food and grocery orders come with a customer personality (CustomerData) that changes
+## tips, deadlines and how they rate you, and may plan random events for the job (a spilled
+## drink, a new drop-off, a wrong address, a tip taken back). Your star rating per app sets your
+## tier: Platinum gets priority offers, and falling too low gets you deactivated.
 
 signal offers_changed
 signal job_changed
@@ -15,6 +20,9 @@ var online := {}
 var offers: Array = []
 var job: Dictionary = {}
 var ratings := {}
+var recent := {}           # app id -> latest star ratings, newest first
+var deactivated := {}      # app id -> the day you can appeal and take the course
+var random_events := true  # tests turn this off to get predictable jobs
 var town: Node = null      # set by main: provides addresses, restaurants, stores, station
 var main: Node = null      # set by main: provides actor position / driving state
 
@@ -26,7 +34,8 @@ var _flex_blocks_seen := {}
 func _ready() -> void:
 	for id in GameData.APPS:
 		online[id] = false
-		ratings[id] = 4.85
+		ratings[id] = CustomerData.START_RATING
+		recent[id] = []
 	Game.minutes_advanced.connect(_on_minutes)
 	Game.bladder_accident.connect(_on_bladder_accident)
 
@@ -79,6 +88,8 @@ func ineligible_reason(id: String) -> String:
 	if Game.phone_battery <= 0.0:
 		return "Your phone is dead. Charge it in your car."
 	var a := app(id)
+	if deactivated.has(id):
+		return "%s deactivated your account (rating %.2f). %s" % [a.name, ratings[id], reactivation_text(id)]
 	if a.has("min_year") and Game.car().year < a.min_year:
 		return "%s requires a %d or newer vehicle. Your %s doesn't qualify." % [a.name, a.min_year, Game.car().name]
 	return ""
@@ -130,6 +141,8 @@ func _tick_minute() -> void:
 		if now > o.expires:
 			offers.erase(o)
 			changed = true
+	if not job.is_empty():
+		_job_events(now)
 	if not job.is_empty():
 		_check_job_time(now)
 	elif town != null:
@@ -215,6 +228,7 @@ func _make_offer(id: String) -> void:
 			o.weather_pay = snappedf((a.base + a.per_item * items.size() + a.per_mile * miles) * (wb - 1.0), 0.01)
 			o.pay = a.base + a.per_item * items.size() + a.per_mile * miles + o.peak_pay + o.weather_pay + o.tip
 			o.deadline = now + 50.0 + items.size() * 6.0 + miles * 9.0
+	_add_customer(o, id)
 	o.miles = snappedf(o.miles, 0.1)
 	o.pay = snappedf(o.pay, 0.01)
 	offers.append(o)
@@ -272,10 +286,13 @@ func accept(offer_id: int) -> void:
 	offers.erase(o)
 	job = o.duplicate()
 	job.crashes = 0
+	job.accepted_at = Game.total_minutes()
+	job.spilled = false
+	job.events = _plan_events(job) if random_events else []
 	match job.kind:
 		"ride":
 			job.stage = "to_pickup"
-			Game.notify("Yoober-style ride accepted. Pick up %s." % job.passenger, "good")
+			Game.notify("Ride accepted. Pick up %s (%s)." % [job.passenger, customer_tag(job)], "good")
 		"food":
 			job.stage = "to_restaurant"
 			Game.notify("Order #%d accepted. Head to %s." % [job.order_no, job.restaurant.name], "good")
@@ -402,7 +419,13 @@ func start_trip() -> void:
 		return
 	job.stage = "to_dropoff"
 	job.crashes = 0
-	Game.notify("%s hopped in. \"Hey! Can you turn the music up?\"" % job.passenger, "info")
+	var now := Game.total_minutes()
+	job.trip_start = now
+	job.next_chat = now + randf_range(2.0, 4.0)
+	job.new_stop_at = randf_range(1.5, 3.0)
+	job.spill_at = randf_range(2.0, 5.0)
+	var greet := customer_line(job.get("personality", ""), "greet")
+	Game.notify(_say(job.passenger, greet if greet != "" else "\"Hey! Can you turn the music up?\""), "info")
 	job_changed.emit()
 
 
@@ -414,16 +437,30 @@ func can_end_trip() -> bool:
 func end_trip() -> void:
 	if not can_end_trip():
 		return
-	var stars: float = 5.0 - job.crashes * 1.0
+	var p := persona()
+	var late: bool = Game.total_minutes() > job.deadline
+	var stars: float = 5.0 - job.crashes * float(p.crash_mult)
 	if Game.car().comfort < 0.9:
 		stars -= 0.5
-	if Game.total_minutes() > job.deadline:
-		stars -= 1.0
-	stars = clampf(stars, 1.0, 5.0)
+	if late:
+		stars -= 1.0 if p.hurry >= 1.0 else 2.0
+	stars = _final_stars(stars + float(p.stars))
 	var tip := 0.0
-	if stars >= 4.5 and randf() < 0.45:
-		tip = float(randi_range(1, 6))
-	_complete(stars, tip, "%s rated you %d stars." % [job.passenger, int(stars)])
+	if stars >= 4.5 and randf() < clampf(0.45 * p.tip, 0.0, 0.95):
+		tip = float(randi_range(1, 6)) * float(p.tip)
+	if not late and stars >= 4.0:
+		tip += float(p.on_time_tip)
+	var extra := ""
+	if job.get("cleaning_fee", 0.0) > 0.0:
+		tip += job.cleaning_fee
+		extra = " Includes a $%.0f cleaning fee." % job.cleaning_fee
+	var bye := customer_line(job.get("personality", ""), "bye")
+	var msg := "%s rated you %d★." % [job.passenger, int(stars)]
+	if bye != "":
+		msg = _say(job.passenger, bye) + " " + msg
+	if tip > 0.0:
+		msg += " Tip $%.2f." % tip
+	_complete(stars, snappedf(tip, 0.01), msg + extra)
 
 
 func pick_up_food() -> void:
@@ -437,6 +474,8 @@ func grab_item(item: String) -> void:
 		return
 	job.stage = "shopping"
 	job.picked.append(item)
+	if _take_event("out_of_stock"):
+		_out_of_stock()
 	Game.notify("Grabbed %s (%d/%d)" % [item, job.picked.size(), job.items.size()], "info")
 	if job.picked.size() >= job.items.size():
 		job.stage = "checkout"
@@ -456,6 +495,9 @@ func checkout() -> void:
 
 
 func leave_at_door() -> void:
+	if _take_event("wrong_address"):
+		_wrong_address()
+		return
 	job.stage = "confirm_photo"
 	Game.notify("Order left at the door. Take the drop-off photo in the app.", "info")
 	job_changed.emit()
@@ -464,14 +506,43 @@ func leave_at_door() -> void:
 func confirm_photo() -> void:
 	if job.get("stage", "") != "confirm_photo" or not can_take_photo():
 		return
+	var p := persona()
+	var who: String = job.customer_name
 	var late: bool = Game.total_minutes() > job.deadline
-	var stars := 4.0 if late else 5.0
-	stars -= job.crashes * 0.5
-	var tip_note := ""
+	var stars := 5.0
 	if late:
+		stars -= 1.0 if p.hurry >= 1.0 else 2.0
+	stars -= job.crashes * 0.5 * float(p.crash_mult)
+	var notes := ""
+	if job.spilled:
+		stars -= 1.5
+		job.pay -= job.tip
+		job.tip = 0.0
+		notes += " %s: \"The drink spilled all over the bag!\" They took back the tip." % who
+	elif late:
 		job.pay -= job.tip * 0.5
-		tip_note = " You were late, so the customer cut the tip."
-	_complete(stars, 0.0, "Delivered!" + tip_note)
+		job.tip *= 0.5
+		notes += " You were late, so the customer cut the tip."
+	stars = _final_stars(stars + float(p.stars))
+	var extra := 0.0
+	if _take_event("tip_bait") and job.tip > 0.0:
+		job.pay -= job.tip
+		notes += " Then %s removed the $%.2f tip. Ouch." % [who, job.tip]
+		job.tip = 0.0
+	elif stars >= 4.0:
+		if not late:
+			extra += float(p.on_time_tip)
+		if p.tip >= 2.0:
+			extra += float(randi_range(3, 8))
+		if extra > 0.0:
+			notes += " %s added $%.2f to the tip!" % [who, extra]
+	var bye := customer_line(job.get("personality", ""), "bye")
+	if not bye.begins_with("\""):
+		bye = ""
+	var msg := "Delivered! %s rated you %d★." % [who, int(stars)]
+	if bye != "":
+		msg += " " + _say(who, bye)
+	_complete(stars, extra, msg + notes)
 
 
 func can_scan() -> bool:
@@ -557,7 +628,14 @@ func _complete(stars: float, extra_tip: float, msg: String) -> void:
 
 
 func _rate(id: String, stars: float) -> void:
-	ratings[id] = clampf(lerpf(ratings[id], stars, 0.12), 1.0, 5.0)
+	var before: float = ratings[id]
+	ratings[id] = clampf(lerpf(before, stars, CustomerData.RATING_WEIGHT), 1.0, 5.0)
+	var rec: Array = recent.get(id, [])
+	rec.push_front(int(roundf(stars)))
+	if rec.size() > CustomerData.RECENT_KEEP:
+		rec.resize(CustomerData.RECENT_KEEP)
+	recent[id] = rec
+	_check_standing(id, before)
 
 
 func _check_job_time(now: float) -> void:
@@ -590,10 +668,302 @@ func on_crash(strength: float) -> void:
 		Game.notify("%s: \"WHOA! Are you trying to kill me?!\"" % job.passenger, "bad")
 	elif job.kind in ["food", "grocery"] and job.stage == "to_customer" and strength > 8.0:
 		job.crashes += 1
-		Game.notify("You hear the order slide across the back seat...", "warn")
+		if job.kind == "food" and random_events and not job.get("spilled", false) \
+				and randf() < CustomerData.DRINK_SPILL_ON_CRASH:
+			job.spilled = true
+			Game.notify("Uh oh. The drink tipped over inside the bag...", "bad")
+		else:
+			Game.notify("You hear the order slide across the back seat...", "warn")
 
 
 func _on_bladder_accident() -> void:
 	if job.get("stage", "") == "to_dropoff":
 		job.crashes += 4
 		Game.notify("%s is horrified. That's going to be one star." % job.passenger, "bad")
+
+
+# --- Customers: personalities and what they say ------------------------------------
+
+## Gives a ride, food or grocery offer its customer: personality, their own star rating,
+## and your tier's effect on pay (Platinum offers pay more, At risk offers pay less).
+func _add_customer(o: Dictionary, id: String) -> void:
+	if o.kind == "flex":
+		return
+	var now := Game.total_minutes()
+	var r: float = ratings[id]
+	var pid := _pick_personality(r)
+	var p: Dictionary = CustomerData.PERSONALITIES[pid]
+	o.personality = pid
+	o.customer_rating = snappedf(randf_range(p.rating[0], p.rating[1]), 0.01)
+	if o.kind in ["food", "grocery"]:
+		# Delivery tips are shown up front, so the personality changes them now.
+		var new_tip := float(roundi(o.tip * float(p.tip)))
+		o.pay += new_tip - o.tip
+		o.tip = new_tip
+		o.note = customer_line(pid, "note")
+	o.priority = r >= CustomerData.TIERS[0][0]
+	var mult := 1.0
+	if o.priority:
+		mult = CustomerData.PLATINUM_PAY
+	elif r < CustomerData.TIERS[2][0]:
+		mult = CustomerData.AT_RISK_PAY
+	o.tier_pay = snappedf(o.pay * (mult - 1.0), 0.01)
+	o.pay *= mult
+	o.deadline = now + (o.deadline - now) * float(p.hurry)
+
+
+func _pick_personality(rating: float) -> String:
+	var h := Game.hour()
+	var night := h >= CustomerData.NIGHT_START or h < CustomerData.NIGHT_END
+	var platinum := rating >= CustomerData.TIERS[0][0]
+	var weights := {}
+	var total := 0.0
+	for pid in CustomerData.PERSONALITIES:
+		var p: Dictionary = CustomerData.PERSONALITIES[pid]
+		var w: float = float(p.night_weight if night else p.weight)
+		if platinum:
+			w = 0.0 if pid in CustomerData.PLATINUM_SKIP else w * float(CustomerData.PLATINUM_BOOST.get(pid, 1.0))
+		weights[pid] = w
+		total += w
+	var roll := randf() * total
+	for pid in weights:
+		roll -= weights[pid]
+		if roll <= 0.0 and weights[pid] > 0.0:
+			return pid
+	return "friendly"
+
+
+## The active job's customer personality.
+func persona() -> Dictionary:
+	return CustomerData.PERSONALITIES.get(job.get("personality", "friendly"), CustomerData.PERSONALITIES.friendly)
+
+
+## "💬 Chatty • 4.92★", for offers and the job card.
+func customer_tag(o: Dictionary) -> String:
+	if not o.has("personality"):
+		return ""
+	var p: Dictionary = CustomerData.PERSONALITIES[o.personality]
+	return "%s %s • %.2f★" % [p.icon, p.label, o.customer_rating]
+
+
+func customer_line(pid: String, key: String) -> String:
+	var lines: Array = CustomerData.LINES.get(pid, {}).get(key, [])
+	return "" if lines.is_empty() else str(lines.pick_random())
+
+
+## Quotes get the speaker's name in front; descriptions ("They nod...") get it in brackets.
+func _say(who: String, line: String) -> String:
+	if line.begins_with("\""):
+		return "%s: %s" % [who, line]
+	return "(%s) %s" % [who, line]
+
+
+func _final_stars(stars: float) -> float:
+	if random_events and randf() < CustomerData.RANDOM_GRUMP_CHANCE:
+		stars -= 1.0
+	return clampf(roundf(stars), 1.0, 5.0)
+
+
+# --- Random job events --------------------------------------------------------------
+
+func _plan_events(j: Dictionary) -> Array:
+	var ev := []
+	var pid: String = j.get("personality", "friendly")
+	match j.kind:
+		"ride":
+			if randf() < (CustomerData.RIDE_SPILL_CHANCE_PARTY if pid == "partying" else CustomerData.RIDE_SPILL_CHANCE):
+				ev.append("spill")
+			if randf() < CustomerData.RIDE_NEW_STOP_CHANCE:
+				ev.append("new_stop")
+			if randf() < CustomerData.RIDE_CANCEL_CHANCE:
+				ev.append("rider_cancel")
+		"food", "grocery":
+			if randf() < CustomerData.WRONG_ADDRESS_CHANCE:
+				ev.append("wrong_address")
+			if randf() < (CustomerData.TIP_BAIT_CHANCE_RUDE if pid == "rude" else CustomerData.TIP_BAIT_CHANCE):
+				ev.append("tip_bait")
+			if j.kind == "grocery" and j.items.size() > 3 and randf() < CustomerData.OUT_OF_STOCK_CHANCE:
+				ev.append("out_of_stock")
+	return ev
+
+
+## True (and uses it up) if this event is planned for the active job.
+func _take_event(e: String) -> bool:
+	var ev: Array = job.get("events", [])
+	if e in ev:
+		ev.erase(e)
+		return true
+	return false
+
+
+## Things that happen on the way: rider cancels, passengers talk, spill, or change the drop-off.
+func _job_events(now: float) -> void:
+	if job.kind != "ride":
+		return
+	var ev: Array = job.get("events", [])
+	if job.stage == "to_pickup" and "rider_cancel" in ev and now - job.accepted_at >= 3.0:
+		var a := app(job.app)
+		Game.earn(CustomerData.RIDER_CANCEL_FEE, "%s cancellation fee" % a.name)
+		Game.notify("%s cancelled the ride. %s paid you a $%.2f cancellation fee." % [job.passenger, a.name, CustomerData.RIDER_CANCEL_FEE], "warn")
+		job = {}
+		job_changed.emit()
+		_refresh_gps()
+		return
+	if job.stage != "to_dropoff":
+		return
+	var t: float = now - job.trip_start
+	if "new_stop" in ev and t >= job.new_stop_at:
+		ev.erase("new_stop")
+		_new_stop()
+	if "spill" in ev and t >= job.spill_at:
+		ev.erase("spill")
+		_spill()
+	if now >= job.next_chat:
+		var chatty: bool = job.personality in ["chatty", "partying"]
+		job.next_chat = now + (randf_range(3.0, 5.0) if chatty else randf_range(4.0, 7.0))
+		var line := customer_line(job.personality, "chat")
+		if line != "" and (chatty or randf() < 0.4):
+			Game.notify(_say(job.passenger, line), "info")
+
+
+func _spill() -> void:
+	job.cleaning_fee = CustomerData.CLEANING_FEE
+	var msg: String = CustomerData.SPILL_LINES.pick_random() % job.passenger
+	msg += " They'll be charged a $%.0f cleaning fee." % CustomerData.CLEANING_FEE
+	if Game.money >= CustomerData.DETAILING_COST:
+		Game.spend(CustomerData.DETAILING_COST, "Seat shampoo (spill)")
+		msg += " You paid $%.0f for seat shampoo." % CustomerData.DETAILING_COST
+	Game.notify(msg, "warn")
+
+
+func _new_stop() -> void:
+	var old: Dictionary = job.dropoff
+	var d := _pick_far(old, town.addresses + town.restaurants + town.stores)
+	if d.name == old.name or d.name == job.pickup.name:
+		return
+	var a := app(job.app)
+	var extra := _miles(old.curb, d.curb)
+	var add_pay := snappedf(a.per_mile * extra * surge(job.app) * Game.car().comfort, 0.01)
+	job.dropoff = d
+	job.pay += add_pay
+	job.miles = snappedf(job.miles + extra, 0.1)
+	job.deadline += extra * 8.0
+	var line: String = CustomerData.NEW_STOP_LINES.pick_random() % [job.passenger, d.name]
+	Game.notify("%s The fare went up $%.2f." % [line, add_pay], "warn")
+	job_changed.emit()
+	_refresh_gps()
+
+
+func _wrong_address() -> void:
+	var old: Dictionary = job.customer
+	var pool := []
+	for addr in town.addresses:
+		var d := _miles(old.curb, addr.curb)
+		if addr.name != old.name and d > 0.3 and d < 1.6:
+			pool.append(addr)
+	if pool.is_empty():
+		pool = town.addresses.filter(func(x): return x.name != old.name)
+	var dest: Dictionary = pool.pick_random()
+	var extra := _miles(old.curb, dest.curb)
+	var bonus := snappedf(CustomerData.WRONG_ADDRESS_BONUS + float(app(job.app).per_mile) * extra, 0.01)
+	job.customer = dest
+	job.pay += bonus
+	job.deadline = maxf(job.deadline, Game.total_minutes()) + 10.0 + extra * 9.0
+	Game.notify("%s texted: \"WAIT, wrong address, so sorry! I'm at %s.\" The app added $%.2f." % [job.customer_name, dest.name, bonus], "warn")
+	job_changed.emit()
+	_refresh_gps()
+
+
+func _out_of_stock() -> void:
+	var left: Array = job.items.filter(func(x): return not x in job.picked)
+	if left.size() < 2:
+		return
+	var gone: String = left.pick_random()
+	job.items.erase(gone)
+	job.pay -= float(app(job.app).per_item)
+	Game.notify("%s is out of stock. %s: \"No worries, just skip it.\"" % [gone, job.customer_name], "warn")
+
+
+func _refresh_gps() -> void:
+	if main != null and main.has_method("refresh_gps"):
+		main.refresh_gps()
+
+
+# --- Star rating: tiers, warnings, deactivation ---------------------------------------
+
+## [min rating, name, color, description] for the app's current rating.
+func tier(id: String) -> Array:
+	return _tier_for(ratings[id])
+
+
+func _check_standing(id: String, before: float) -> void:
+	var a := app(id)
+	var r: float = ratings[id]
+	if r < CustomerData.DEACTIVATE_BELOW:
+		if deactivated.has(id):
+			return
+		deactivated[id] = Game.day + CustomerData.REACTIVATION_WAIT_DAYS
+		online[id] = false
+		offers = offers.filter(func(o): return o.app != id)
+		Game.notify("%s DEACTIVATED your account. Your rating fell to %.2f. You can appeal on Day %d." % [a.name, r, deactivated[id]], "bad")
+		offers_changed.emit()
+		return
+	if r < CustomerData.WARN_BELOW and before >= CustomerData.WARN_BELOW:
+		Game.notify("%s: your rating is %.2f. Drop below %.2f and you'll be deactivated." % [a.name, r, CustomerData.DEACTIVATE_BELOW], "bad")
+		return
+	var t_before: String = _tier_for(before)[1]
+	var t_now: String = tier(id)[1]
+	if t_now != t_before:
+		var up := r > before
+		Game.notify("%s: you %s %s (%.2f★). %s" % [a.name, "reached" if up else "dropped to", t_now, r, tier(id)[3]], "good" if up else "warn")
+
+
+func _tier_for(r: float) -> Array:
+	for t in CustomerData.TIERS:
+		if r >= t[0]:
+			return t
+	return CustomerData.TIERS.back()
+
+
+func can_appeal(id: String) -> bool:
+	return deactivated.has(id) and Game.day >= int(deactivated[id])
+
+
+func reactivation_text(id: String) -> String:
+	if not deactivated.has(id):
+		return ""
+	if can_appeal(id):
+		return "Take the Driver Quality Course ($%.0f) in the app to get back on." % CustomerData.REACTIVATION_FEE
+	return "You can appeal on Day %d." % int(deactivated[id])
+
+
+## Pays for the course (a long, boring video) and reactivates the account.
+func appeal(id: String) -> bool:
+	if not can_appeal(id):
+		return false
+	if not Game.spend(CustomerData.REACTIVATION_FEE, "%s Driver Quality Course" % app(id).name):
+		return false
+	deactivated.erase(id)
+	ratings[id] = maxf(ratings[id], CustomerData.REACTIVATED_RATING)
+	recent[id] = []
+	Game.advance(40.0)
+	Game.notify("You sat through the %s Driver Quality Course (40 minutes of \"Smile more!\"). You're back on at %.2f★." % [app(id).name, ratings[id]], "good")
+	offers_changed.emit()
+	return true
+
+
+func save_state() -> Dictionary:
+	return {"recent": recent, "deactivated": deactivated}
+
+
+func load_state(data: Dictionary) -> void:
+	deactivated = {}
+	for id in recent:
+		recent[id] = []
+	var rec: Dictionary = data.get("recent", {})
+	for k in rec:
+		if recent.has(k):
+			recent[k] = rec[k].map(func(x): return int(x))
+	var de: Dictionary = data.get("deactivated", {})
+	for k in de:
+		deactivated[k] = int(de[k])
