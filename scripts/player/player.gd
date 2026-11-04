@@ -181,7 +181,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * MOUSE_SENS * Game.mouse_sens
-		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens, -1.2, 0.6)
+		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens * Game.look_y_sign(), -1.2, 0.6)
 
 
 func _physics_process(delta: float) -> void:
@@ -193,7 +193,7 @@ func _physics_process(delta: float) -> void:
 	if not input_locked:
 		# Right stick: curved response plus a little acceleration so turns start and stop smoothly.
 		var look := Game.look_stick()
-		var want := Vector2(-look.x * 2.3, -look.y * 1.5) * Game.pad_sens
+		var want := Vector2(-look.x * 2.3, -look.y * 1.5 * Game.look_y_sign()) * Game.pad_sens
 		_look_vel = _look_vel.lerp(want, 1.0 - exp(-9.0 * delta))
 		yaw += _look_vel.x * delta
 		pitch = clampf(pitch + _look_vel.y * delta, -1.2, 0.6)

@@ -12,7 +12,10 @@ signal slept(hours: float)
 signal bladder_accident
 signal bills_changed
 
-const SAVE_PATH := "user://savegame.json"
+const SAVE_PATH := "user://savegame.json"   # the old single save; moved to slot 1 on start
+const SLOT_COUNT := 3                       # manual save slots 1..3
+const AUTOSAVE_SLOT := 0                    # written when you sleep and at midnight
+var current_slot := 1                       # F5 and the phone save here
 
 var money: float
 var day: int
@@ -54,6 +57,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_input()
 	load_options()
+	_migrate_old_save()
 	new_game()
 
 
@@ -683,7 +687,84 @@ func _take_delivery(id: String) -> void:
 
 # --- Save / load --------------------------------------------------------------------
 
-func save_game() -> void:
+# --- Save slots ----------------------------------------------------------------------
+
+func slot_path(slot: int) -> String:
+	return "user://save_auto.json" if slot == AUTOSAVE_SLOT else "user://save_slot%d.json" % slot
+
+
+func slot_name(slot: int) -> String:
+	return "Autosave" if slot == AUTOSAVE_SLOT else "Slot %d" % slot
+
+
+func _migrate_old_save() -> void:
+	if FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(slot_path(1)):
+		DirAccess.rename_absolute(SAVE_PATH, slot_path(1))
+
+
+## What's in a slot, for the save/load list: {day, minute, money, car, home, saved_at, unix}.
+## Empty when the slot has no save.
+func slot_info(slot: int) -> Dictionary:
+	if not FileAccess.file_exists(slot_path(slot)):
+		return {}
+	var f := FileAccess.open(slot_path(slot), FileAccess.READ)
+	var data = JSON.parse_string(f.get_as_text()) if f else null
+	if typeof(data) != TYPE_DICTIONARY:
+		return {"corrupt": true}
+	var meta: Dictionary = data.get("meta", {})
+	var cid := str(data.get("car_id", "rustwagon"))
+	var hid := str(data.get("home_id", ""))
+	return {
+		"day": int(data.get("day", 1)), "minute": float(data.get("minute", 0.0)),
+		"money": float(data.get("money", 0.0)),
+		"car": GameData.CARS[cid].name if GameData.CARS.has(cid) else cid,
+		"home": GameData.HOMES[hid].name if GameData.HOMES.has(hid) else "No home",
+		"saved_at": str(meta.get("saved_at", "")), "unix": float(meta.get("unix", 0.0)),
+	}
+
+
+## One line describing a slot ("Day 4, Thu 3:12 PM · $412 · ...") or "Empty".
+func slot_summary(slot: int) -> String:
+	var i := slot_info(slot)
+	if i.is_empty():
+		return "Empty"
+	if i.get("corrupt", false):
+		return "Unreadable save"
+	var wd: String = GameData.DAY_NAMES[(int(i.day) - 1) % 7]
+	var when := ""
+	if i.saved_at != "":
+		when = "   saved %s" % i.saved_at.replace("T", " ").substr(0, 16)
+	return "Day %d, %s %s   $%.0f   %s%s" % [i.day, wd, time_string(i.minute), i.money, i.car, when]
+
+
+func has_any_save() -> bool:
+	for slot in range(AUTOSAVE_SLOT, SLOT_COUNT + 1):
+		if has_save(slot):
+			return true
+	return false
+
+
+## The slot saved most recently (current_slot when nothing has a timestamp).
+func latest_slot() -> int:
+	var best := current_slot
+	var best_t := -1.0
+	for slot in range(AUTOSAVE_SLOT, SLOT_COUNT + 1):
+		var i := slot_info(slot)
+		if not i.is_empty() and float(i.get("unix", 0.0)) > best_t:
+			best_t = float(i.get("unix", 0.0))
+			best = slot
+	return best
+
+
+func delete_save(slot: int) -> void:
+	if FileAccess.file_exists(slot_path(slot)):
+		DirAccess.remove_absolute(slot_path(slot))
+
+
+## Saves to `slot` (-1 = current_slot).
+func save_game(slot := -1) -> void:
+	if slot < 0:
+		slot = current_slot
 	var data := {
 		"money": money, "day": day, "minute": minute, "hunger": hunger, "bladder": bladder,
 		"energy": energy, "phone_battery": phone_battery, "phone_service": phone_service,
@@ -693,21 +774,31 @@ func save_game() -> void:
 		"transactions": transactions, "stats": stats, "bill_seq": _bill_seq,
 		"ratings": Gigs.ratings, "phone_pro": phone_pro, "loan": loan,
 	}
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	data["meta"] = {"saved_at": Time.get_datetime_string_from_system(), "unix": Time.get_unix_time_from_system()}
+	var f := FileAccess.open(slot_path(slot), FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(data))
-		notify("Game saved.", "info")
+		if slot == AUTOSAVE_SLOT:
+			notify("Autosaved.", "info")
+		else:
+			current_slot = slot
+			notify("Game saved (%s)." % slot_name(slot), "info")
+	else:
+		notify("Couldn't save: %s" % error_string(FileAccess.get_open_error()), "bad")
 
 
-func has_save() -> bool:
-	return FileAccess.file_exists(SAVE_PATH)
+func has_save(slot := -1) -> bool:
+	return FileAccess.file_exists(slot_path(current_slot if slot < 0 else slot))
 
 
-func load_game() -> bool:
-	if not has_save():
-		notify("No save found.", "warn")
+## Loads `slot` (-1 = current_slot).
+func load_game(slot := -1) -> bool:
+	if slot < 0:
+		slot = current_slot
+	if not has_save(slot):
+		notify("No save in %s." % slot_name(slot), "warn")
 		return false
-	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var f := FileAccess.open(slot_path(slot), FileAccess.READ)
 	var data = JSON.parse_string(f.get_as_text())
 	if typeof(data) != TYPE_DICTIONARY:
 		notify("Save file is corrupted.", "bad")
@@ -740,7 +831,9 @@ func load_game() -> bool:
 	car_changed.emit()
 	home_changed.emit()
 	bills_changed.emit()
-	notify("Game loaded.", "info")
+	if slot != AUTOSAVE_SLOT:
+		current_slot = slot
+	notify("Game loaded (%s)." % slot_name(slot), "info")
 	return true
 
 
@@ -840,26 +933,48 @@ var volume := 0.8           # master volume 0..1
 var mouse_sens := 1.0       # multiplier
 var pad_sens := 1.0         # right-stick look speed multiplier
 var mirror_mode := 0        # 0 = mirrors in the car, 1 = car + screen overlays, 2 = off
+var invert_y := false       # look up/down inverted (mouse and right stick)
+var fov := 70.0             # walking camera field of view; the car's is a bit wider
+var fullscreen := false
+var vsync := true
+var screen_fx := 1.0        # strength of the hunger / tiredness / bladder screen effects, 0 = off
+var autosave := true        # save to the autosave slot when you sleep and at midnight
+
+const OPTION_KEYS := ["volume", "mouse_sens", "pad_sens", "mirror_mode", "invert_y", "fov",
+	"fullscreen", "vsync", "screen_fx", "autosave"]
 
 
 func load_options() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK:
-		volume = float(cfg.get_value("options", "volume", volume))
-		mouse_sens = float(cfg.get_value("options", "mouse_sens", mouse_sens))
-		pad_sens = float(cfg.get_value("options", "pad_sens", pad_sens))
-		mirror_mode = int(cfg.get_value("options", "mirror_mode", mirror_mode))
+		for k in OPTION_KEYS:
+			var v = cfg.get_value("options", k, get(k))
+			set(k, type_convert(v, typeof(get(k))))
 	apply_volume()
+	apply_display()
 
 
 func save_options() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
-	cfg.set_value("options", "volume", volume)
-	cfg.set_value("options", "mouse_sens", mouse_sens)
-	cfg.set_value("options", "pad_sens", pad_sens)
-	cfg.set_value("options", "mirror_mode", mirror_mode)
+	for k in OPTION_KEYS:
+		cfg.set_value("options", k, get(k))
 	cfg.save(SETTINGS_PATH)
+
+
+## Multiplies look up/down input: -1 when inverted.
+func look_y_sign() -> float:
+	return -1.0 if invert_y else 1.0
+
+
+func apply_display() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var mode := DisplayServer.window_get_mode()
+	var is_full := mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+	if fullscreen != is_full:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 
 
 func apply_volume() -> void:

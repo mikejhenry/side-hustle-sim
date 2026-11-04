@@ -21,6 +21,8 @@ var traffic_control: TrafficControl
 var weather_fx: WeatherFX
 var pedestrians: Pedestrians
 var pause_menu: PauseMenu
+var transit: Transit
+var needs_fx: NeedsFX
 var tutorial: Tutorial
 var auto_tutorial := true     # tests turn this off
 var _gps_timer := 0.0
@@ -83,6 +85,14 @@ func _ready() -> void:
 	pedestrians.main = self
 	add_child(pedestrians)
 	pedestrians.build()
+	transit = Transit.new()
+	transit.town = town
+	transit.main = self
+	add_child(transit)
+	transit.build()
+	needs_fx = NeedsFX.new()
+	needs_fx.main = self
+	add_child(needs_fx)
 	tutorial = Tutorial.new()
 	tutorial.main = self
 	add_child(tutorial)
@@ -99,7 +109,10 @@ func _ready() -> void:
 	Gigs.offer_received.connect(func(_o): Sfx.play(self, "ping", -2.0))
 
 	player.set_active(true)
+	apply_view_settings()
 	Game.home_changed.connect(_on_home_changed)
+	Game.slept.connect(func(_h): _queue_autosave())
+	Game.day_changed.connect(func(_d): _queue_autosave())
 	update_mouse_mode()
 	if auto_tutorial and not Tutorial.is_done():
 		tutorial.start()
@@ -312,7 +325,7 @@ func _process(delta: float) -> void:
 	_update_gps(delta, t)
 	_update_sky()
 	# With a gamepad, the stick and A button drive the phone's menus, not the character.
-	var locked: bool = hud.menu_open or (phone.is_open and Game.using_pad)
+	var locked: bool = hud.menu_open or traveling or (phone.is_open and Game.using_pad)
 	player.input_locked = locked
 	car.input_locked = locked
 
@@ -406,7 +419,7 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("save_game"):
 		Game.save_game()
 	elif event.is_action_pressed("load_game"):
-		load_game()
+		load_game(Game.latest_slot())
 	elif event.is_action_pressed("time_warp"):
 		Game.time_multiplier = 10.0 if Game.time_multiplier == 1.0 else 1.0
 		hud.toast("Time speed: %dx" % Game.time_multiplier, "info")
@@ -523,9 +536,11 @@ func call_tow() -> void:
 	hud.toast("Your car was towed to Lube & Tube. That took 40 minutes.", "info")
 
 
-func load_game() -> void:
-	if not Game.load_game():
+## Loads a save slot (see Game.slot_path). -1 = the slot you last saved to or loaded.
+func load_game(slot := -1) -> void:
+	if not Game.load_game(slot):
 		return
+	map_waypoint = {}
 	if driving:
 		driving = false
 		car.set_driver(false)
@@ -539,3 +554,90 @@ func load_game() -> void:
 
 func _on_home_changed() -> void:
 	pass
+
+
+# --- New game, autosave -----------------------------------------------------------------
+
+func new_game() -> void:
+	if driving:
+		driving = false
+		car.set_driver(false)
+	Game.new_game()
+	Gigs.go_offline_all()
+	Gigs.reset_jobs()
+	for id in Gigs.ratings:
+		Gigs.ratings[id] = 4.85
+	map_waypoint = {}
+	phone.close()
+	player.global_position = town.spawn_point
+	player.yaw = PI
+	player.set_active(true)
+	car.teleport(town.car_spawn)
+	refresh_gps()
+	hud.toast("New game. Day 1, back at Dottie's with $%.0f." % Game.money, "info")
+
+
+var _autosave_queued := false
+
+
+## Saves to the autosave slot once things settle (sleeping fires both day_changed and slept).
+func _queue_autosave() -> void:
+	if not Game.autosave or _autosave_queued:
+		return
+	_autosave_queued = true
+	(func():
+		_autosave_queued = false
+		Game.save_game(Game.AUTOSAVE_SLOT)).call_deferred()
+
+
+# --- Settings that live on the cameras ----------------------------------------------------
+
+func apply_view_settings() -> void:
+	player.camera.fov = Game.fov
+	car.fp_camera.fov = Game.fov + 8.0
+	car.chase_camera.fov = Game.fov + 5.0
+
+
+# --- Fast travel (taxi, bus) and dropped pins --------------------------------------------
+
+var traveling := false
+
+
+## Fades out, moves the clock on by `minutes`, puts you at `to` (on foot), and fades back in.
+func travel(to: Vector3, minutes: float, riding_text: String, arrive_text: String) -> void:
+	if traveling:
+		return
+	traveling = true
+	phone.close()
+	hud.close_menu()
+	if pause_menu.is_open:
+		pause_menu.close()
+	player.input_locked = true
+	await hud.fade_out(riding_text)
+	Game.advance(minutes)
+	player.global_position = to
+	player.velocity = Vector3.ZERO
+	if not map_waypoint.is_empty() and Vector2(to.x, to.z).distance_to(Vector2(map_waypoint.pos.x, map_waypoint.pos.z)) < 25.0:
+		map_waypoint = {}
+	refresh_gps()
+	await get_tree().create_timer(0.9).timeout
+	hud.fade_in()
+	traveling = false
+	update_mouse_mode()
+	hud.toast(arrive_text, "info")
+
+
+## A GPS pin anywhere on the map: snapped to the sidewalk of the nearest road.
+func drop_pin(at: Vector3) -> void:
+	var snap: Dictionary = gps._snap(Vector3(at.x, 0, at.z))
+	if snap.is_empty():
+		return
+	var q: Vector3 = snap.point
+	var off := Vector3(at.x - q.x, 0, at.z - q.z)
+	if off.length() < 0.5:
+		var pts: PackedVector3Array = gps._edges[snap.edge].pts
+		var along := (pts[pts.size() - 1] - pts[0]).normalized()
+		off = along.cross(Vector3.UP)
+	var pos := q + off.normalized() * 8.6
+	pos.y = 0.6
+	set_waypoint(pos, "Pin on %s" % gps._edges[snap.edge].name)

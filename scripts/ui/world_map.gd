@@ -2,10 +2,13 @@ class_name WorldMap
 extends Control
 ## A drawn map of the whole town: streets and the beltway, the curved Churchmans Loop, an
 ## icon for every place you can go, your position and heading, the GPS route, and where it
-## leads. Click (or tap) an icon to set the GPS there. Used by the phone's Maps app and the
-## full map in the pause menu (G / D-pad right).
+## leads. Click (or tap) an icon to set the GPS there, or anywhere else to drop a pin there.
+## Right-click clears the pin. Used by the phone's Maps app and the full map in the pause
+## menu (G / D-pad right).
 
 signal place_picked(place: Dictionary)
+signal point_picked(world_pos: Vector3)
+signal clear_requested
 
 ## kind -> [legend name, icon text, color]
 const KINDS := {
@@ -18,6 +21,8 @@ const KINDS := {
 	"housing": ["Housing for rent", "R", Color(0.6, 0.4, 0.75)],
 	"restroom": ["Restroom", "WC", Color(0.4, 0.65, 0.9)],
 	"home": ["Your home", "H", Color(1.0, 0.85, 0.2)],
+	"bus": ["Bus stops", "B", Color(0.85, 0.35, 0.6)],
+	"car": ["Your parked car", "P", Color(0.35, 0.35, 0.4)],
 }
 
 var main: Node = null
@@ -71,13 +76,24 @@ func to_map(p: Vector3) -> Vector2:
 	return (Vector2(p.x, p.z) - _origin) * _scale
 
 
+func from_map(at: Vector2) -> Vector3:
+	var w := at / _scale + _origin
+	return Vector3(w.x, 0, w.y)
+
+
 func places() -> Array:
 	var out: Array = []
 	for p in main.town.places:
 		out.append(p)
 	if Game.home_id != "" and main.town.homes.has(Game.home_id):
 		var hd: Dictionary = main.town.homes[Game.home_id]
-		out.append({"name": "Home", "pos": hd.door, "kind": "home"})
+		out.append({"name": "Home", "pos": hd.door, "kind": "home", "door": hd.door, "curb": hd.curb})
+	if main.get("transit") and main.transit:
+		out.append_array(main.transit.stops)
+	if main.get("car") and main.car and not main.is_driving():
+		var c: Vector3 = main.car.global_position
+		out.append({"name": "Your car", "pos": c, "kind": "car",
+			"drop": c + main.car.global_basis.x * 2.4})
 	return out
 
 
@@ -145,8 +161,11 @@ func _draw() -> void:
 		_text_centered(k[1], at, fs if k[1].length() == 1 else int(fs * 0.75), Color.WHITE)
 		if at.distance_to(mouse) < r + 3.0:
 			_hover = p
-	# Where the GPS is taking you.
+	# Where the GPS is taking you, and your own pin if a job's stop is ahead of it.
 	var t: Dictionary = main.nav_target()
+	var wp: Dictionary = main.map_waypoint
+	if not wp.is_empty() and wp != t:
+		_pin(to_map(wp.pos), Color(0.6, 0.35, 0.95))
 	if not t.is_empty():
 		_pin(to_map(t.pos), Color(0.95, 0.15, 0.2))
 	# You.
@@ -204,6 +223,10 @@ func _player_arrow(at: Vector2, heading: float, r: float) -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	var press := false
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		clear_requested.emit()
+		accept_event()
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		press = true
 	elif event is InputEventScreenTouch and event.pressed:
@@ -221,7 +244,9 @@ func _gui_input(event: InputEvent) -> void:
 			best = p
 	if not best.is_empty():
 		place_picked.emit(best)
-		accept_event()
+	else:
+		point_picked.emit(from_map(at))
+	accept_event()
 
 
 ## A legend: one row per kind of place.
@@ -236,6 +261,7 @@ static func legend(parent: Control, columns := 1, font_size := 14) -> void:
 		rows.append([KINDS[k][1], KINDS[k][2], KINDS[k][0]])
 	rows.append(["▲", Color(1, 0.92, 0.1), "You"])
 	rows.append(["●", Color(0.95, 0.15, 0.2), "GPS destination"])
+	rows.append(["●", Color(0.6, 0.35, 0.95), "Your pin (after the job)"])
 	rows.append(["—", Color(0.1, 0.45, 1.0), "GPS route"])
 	for row in rows:
 		var l := Label.new()

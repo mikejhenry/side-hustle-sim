@@ -199,3 +199,19 @@ const FIRST_NAMES := [
 	"Jake", "Kayla", "Luis", "Monique", "Nate", "Olivia", "Priya", "Quinn", "Rosa",
 	"Steve", "Tasha", "Uma", "Victor", "Wendy", "Xavier", "Yolanda", "Zeke",
 ]
+
+# --- Getting around without your car (Transit) ----------------------------------
+# Trip times are in game minutes. Driving across town takes about 15 game minutes, so a
+# taxi is about as fast as driving yourself, and the bus is slower but cheap.
+const TAXI_NAME := "Hail Yeah Cab"
+const TAXI_BASE := 4.00
+const TAXI_PER_MILE := 2.40
+const TAXI_NIGHT_MULT := 1.25          # 11 PM to 5 AM
+const TAXI_WAIT := 5.0                 # minutes for the cab to show up
+const TAXI_METERS_PER_MIN := 30.0
+const BUS_NAME := "DART Last State"
+const BUS_FARE := 2.00
+const BUS_EVERY := 15                  # a bus leaves each stop every 15 minutes
+const BUS_FIRST_HOUR := 5              # first bus 5 AM, last bus leaves before midnight
+const BUS_METERS_PER_MIN := 18.0
+const BUS_STOP_RADIUS := 6.0           # how close to the sign you have to be to board

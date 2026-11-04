@@ -40,10 +40,10 @@ No assets to download: the town is built in code at startup, and the surface tex
 | L | RB | Headlights |
 | R | D-pad down | Flip the car upright |
 | H | R3 | Horn |
-| Esc | Start | Pause menu (resume, map, controls, save/load, graphics, tutorial, quit) |
+| Esc | Start | Pause menu (resume, map, save/load slots, settings, controls, tutorial, new game, quit) |
 | F1 | Back | Controls |
 | F3 | | Graphics quality: high / low (low is the default on Intel graphics) |
-| F5 / F9 | | Save / load |
+| F5 / F9 | | Save to your current slot / load your latest save |
 | F7 / F8 / F6 | | Dev cheats: 10x time speed / +$500 / cycle weather |
 
 With a gamepad, the phone and menus highlight a button: move with the D-pad or left stick,
@@ -90,7 +90,18 @@ next-turn banner at the top of the screen ("Turn left onto Market St, 0.3 mi").
 Maps app on your phone. It shows every street, the beltway and Churchmans Loop, an
 icon for each place (restaurants, grocery stores, gas, mechanic, car lots, the Jungle
 Flex station, housing, restrooms, your home), where you are, and your GPS route. Click
-an icon or pick a place from the list to set the GPS there.
+an icon or pick a place from the list to set the GPS there, or click anywhere else to drop a
+pin (it snaps to the nearest sidewalk). Right-click clears it. If a job's stop is ahead of your
+pin, your pin shows in purple and the GPS takes you there after the job.
+
+**Getting around without your car.** The **Hail Yeah Cab** app on your phone takes you anywhere:
+your GPS pin, your parked car, home, or any place on the map ($4 + $2.40 a mile, 25% more from
+11 PM to 5 AM, about as long as driving there). The full map has a "Take a cab there" button
+once you've set a pin. **DART Last State** buses are cheaper ($2) but slower and only run
+between the eight bus stops (pink B on the map), every 15 minutes from 5 AM to midnight. Walk up
+to a stop sign and press E. Both skip the trip with a fade: the clock moves on (your needs
+too) and you step out on foot. Your car stays where you left it. You can't ride while driving,
+during a gig job, or during the tutorial.
 
 **Jumping.** A running split-leg leap: the front leg comes up, the back leg stretches
 out, the arms swing opposite, and the knees bend to soak up the landing.
@@ -141,7 +152,21 @@ only a few percent. The clock line on the HUD shows the current weather.
 **Pedestrians** walk the sidewalks around the blocks, stopping now and then and when you're in
 their way.
 
-**Settings** (pause menu): volume, mouse sensitivity, gamepad look speed, mirrors. Saved between runs.
+**Feeling your needs.** When you're tired the picture blurs and darkens at the edges, you start
+blinking slowly, and near empty the blinks get long and the view doubles. When you're hungry
+the color drains out and your stomach growls now and then (with a little wobble). When you
+really need to pee, a yellow pulse creeps in from the edges and you shiver. Settings has a
+slider for how strong this is (0 turns it off).
+
+**Save slots.** Three save slots plus an autosave (written when you sleep and at midnight).
+Save game and Load game in the pause menu show each slot's day, time, money, car and when it
+was saved, with a Delete button. F5 saves to the slot you last used, F9 loads your latest save.
+New game (pause menu, press twice) starts over at Dottie's. An old single save from before
+slots becomes slot 1.
+
+**Settings** (pause menu): volume, mouse sensitivity, gamepad look speed, invert look,
+field of view, fullscreen, VSync, graphics quality, mirrors, screen effects strength, and
+autosave. Saved between runs.
 
 All balance numbers (prices, pay, wear rates, need rates) live in `scripts/data/game_data.gd`.
 
@@ -168,6 +193,8 @@ scripts/ui/hud.gd         HUD, minimap, toasts, menus
 scripts/ui/phone.gd       The phone and its apps
 scripts/ui/pause_menu.gd  Pause menu and settings
 scripts/world/pedestrians.gd  People walking the sidewalks
+scripts/world/transit.gd  Bus stops, taxi and bus fares, fast travel
+scripts/ui/needs_fx.gd    Screen effects for tiredness, hunger and a full bladder
 scripts/audio/sfx.gd      Sound effects synthesized in code
 scripts/ui/tutorial.gd    Guided first-day tutorial
 tests/                    Headless smoke test and screenshot renderer

@@ -41,6 +41,7 @@ static func _build(sound_name: String) -> AudioStreamWAV:
 		"shutter": return _wav(_shutter(), false)
 		"rain": return _wav(_rain(), true)
 		"thunder": return _wav(_thunder(), false)
+		"growl": return _wav(_growl(), false)
 	return _wav(PackedFloat32Array([0.0]), false)
 
 
@@ -144,6 +145,33 @@ static func _crash() -> PackedFloat32Array:
 		var thump := sin(TAU * 55.0 * t) * exp(-t * 12.0)
 		var rattle := rng.randf_range(-1.0, 1.0) * exp(-t * 5.0) * 0.25 * (1.0 if fmod(t, 0.06) < 0.03 else 0.4)
 		out[i] = clampf((lp * exp(-t * 6.0) + thump + rattle) * 0.7, -1.0, 1.0)
+	return out
+
+
+## Stomach growl: a low gurgle that wanders in pitch, in a few uneven bubbly bursts.
+static func _growl() -> PackedFloat32Array:
+	var n := int(RATE * 1.5)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var phase := 0.0
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		# Pitch slides around 90-160 Hz with a slow wobble and fast bubbling.
+		var f := 115.0 + 35.0 * sin(TAU * 1.3 * t) + 18.0 * sin(TAU * 9.0 * t)
+		phase += TAU * f / RATE
+		var tone := sin(phase) * 0.6 + sin(phase * 2.0) * 0.25 + sin(phase * 3.0) * 0.1
+		lp = lerpf(lp, rng.randf_range(-1.0, 1.0), 0.05)
+		# Three swells with gaps, like a real gurgle.
+		var env := 0.0
+		for burst in [[0.0, 0.45], [0.5, 0.35], [0.9, 0.55]]:
+			var u: float = (t - burst[0]) / burst[1]
+			if u > 0.0 and u < 1.0:
+				env = maxf(env, sin(PI * u))
+		var bubbles := 0.6 + 0.4 * sin(TAU * 23.0 * t + sin(TAU * 3.0 * t) * 2.0)
+		out[i] = clampf((tone * bubbles + lp * 0.5) * env * 0.65, -1.0, 1.0)
 	return out
 
 
