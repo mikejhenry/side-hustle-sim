@@ -22,6 +22,10 @@ const KINDS := {
 
 var main: Node = null
 var show_street_names := true
+## When set to a gig app id, hot zones for that app are shaded over the map (at `heat_hour`,
+## an hour from now when -1 is "now"; it can run past 23 into tomorrow).
+var heat_app := ""
+var heat_hour := -1
 
 var _scale := 1.0
 var _origin := Vector2.ZERO        # world (x, z) at the top-left corner
@@ -125,6 +129,8 @@ func _draw() -> void:
 		draw_line(to_map(corners[i]), to_map(corners[(i + 1) % 4]), hw, road_w * 1.4)
 	if show_street_names and _scale > 0.6:
 		_street_names(town, B, N, ring)
+	if heat_app != "":
+		_draw_heat()
 	# GPS route.
 	var route: PackedVector3Array = main.gps.route
 	if route.size() > 1:
@@ -153,6 +159,27 @@ func _draw() -> void:
 	_player_arrow(to_map(main.actor_position()), main.actor_heading(), r)
 	if not _hover.is_empty():
 		_tooltip(_hover.name, to_map(_hover.pos) + Vector2(0, -r - 8))
+
+
+func _draw_heat() -> void:
+	var m: Dictionary = Gigs.heat_map(heat_app, heat_hour)
+	for cell in m:
+		var v: float = m[cell]
+		if v < 0.12:
+			continue
+		var r: Rect2 = Gigs.cell_rect(cell)
+		var at := to_map(Vector3(r.position.x, 0, r.position.y))
+		var c := heat_color(v)
+		c.a = 0.3 + 0.45 * v
+		draw_rect(Rect2(at, r.size * _scale), c)
+
+
+## Cool to hot: gray-blue, yellow, orange, red.
+static func heat_color(v: float) -> Color:
+	v = clampf(v, 0.0, 1.0)
+	if v < 0.5:
+		return Color(0.25, 0.3, 0.4).lerp(Color(1.0, 0.85, 0.2), v * 2.0)
+	return Color(1.0, 0.85, 0.2).lerp(Color(0.95, 0.15, 0.1), (v - 0.5) * 2.0)
 
 
 func _street_names(town: Node, B: float, N: int, ring: float) -> void:
