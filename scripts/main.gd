@@ -318,8 +318,11 @@ func _process(delta: float) -> void:
 		hud.set_prompt("")
 
 	# Carrying an order?
-	var j := Gigs.job
-	player.set_carrying(carry_preview if carry_preview != "" else carry_kind(j))
+	var carrying := carry_preview
+	for j in [Gigs.job] + Gigs.jobs:
+		if carrying == "":
+			carrying = carry_kind(j)
+	player.set_carrying(carrying)
 	player.set_phone_visible(phone.is_open)
 
 	# GPS beacon: active job first, then map waypoint.
@@ -330,6 +333,9 @@ func _process(delta: float) -> void:
 		t = tutorial.target()
 	beacon.visible = not t.is_empty()
 	var obj := Gigs.status_text()
+	var others := Gigs.others_text()
+	if others != "":
+		obj += "\n" + others
 	if not t.is_empty():
 		beacon.global_position = t.pos
 		var dist := pos.distance_to(t.pos)

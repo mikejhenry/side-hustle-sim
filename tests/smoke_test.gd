@@ -236,6 +236,8 @@ func _ready() -> void:
 				break
 		check(Gigs.job.is_empty(), "block complete")
 
+	await _multi_app_tests()
+
 	print("Needs, bills, sleep")
 	Game.bladder = 50.0
 	Game.use_restroom()
@@ -870,6 +872,72 @@ func _gamepad_phone_test() -> void:
 
 ## Teleports the player next to the closest interactable whose prompt contains `text`
 ## (searching within `radius` of `near_pos`) and uses it.
+func _multi_app_tests() -> void:
+	print("Multi-apping")
+	Game.minute = 12 * 60.0
+	for id in ["doordish", "instacrate", "yoober", "drift"]:
+		Gigs.set_online(id, true)
+	Gigs.offers.clear()
+	for id in ["doordish", "instacrate", "yoober", "drift"]:
+		Gigs._make_offer(id)
+	var by_app := {}
+	for o in Gigs.offers:
+		by_app[o.app] = o
+	Gigs.accept(by_app.doordish.id)
+	Gigs.accept(by_app.instacrate.id)
+	check(Gigs.jobs.size() == 2 and Gigs.job.app == "doordish", "two apps at once, GPS stays on the first")
+	check("Instacrate" in Gigs.others_text(), "HUD lists the other job: %s" % Gigs.others_text())
+	check(Gigs.accept_block_reason(by_app.yoober) == "", "a third app is allowed")
+	Gigs.accept(by_app.yoober.id)
+	check(Gigs.jobs.size() == 3, "three jobs at once")
+	check(Gigs.accept_block_reason(by_app.drift) != "", "no second passenger or fourth job")
+	Gigs._make_offer("doordish")
+	check(Gigs.accept_block_reason(Gigs.offers.back()) != "", "one job per app")
+	Gigs.focus("instacrate")
+	check(Gigs.job.app == "instacrate" and Gigs.target().label.begins_with("Shop"), "focus moves the GPS")
+	Gigs.focus("doordish")
+	# World objects work for a job the GPS isn't following.
+	var g: Dictionary = Gigs.job_for("grocery")
+	for item in g.items:
+		await _use_nearest_with("Grab " + item, g.store.door, 40.0)
+	check(g.stage == "checkout", "shopped for Instacrate while following DoorDish")
+	var f: Dictionary = Gigs.job_for("food")
+	await _use_nearest_with("Pick up DoorDish", f.restaurant.door, 15.0)
+	check(f.stage == "to_customer", "picked up the DoorDish order")
+	f.deadline = Game.total_minutes() - 20.0
+	var fee := Gigs.late_fee(f, f.pay)
+	check(fee > 0.0 and fee <= f.pay * GameData.LATE_FEE_MAX, "late fee $%.2f" % fee)
+	await _use_nearest_with("Leave", f.customer.door, 4.0)
+	var money0 := Game.money
+	var pay0: float = f.pay
+	Gigs.confirm_photo("doordish")
+	check(Gigs.job_for("food").is_empty() and Game.money - money0 < pay0, "late delivery paid less ($%.2f of $%.2f)" % [Game.money - money0, pay0])
+	check(not Gigs.job.is_empty() and Gigs.job.app != "doordish", "GPS moves on to the next job")
+	Gigs.cancel_job("instacrate")
+	Gigs.cancel_job("yoober")
+	check(Gigs.jobs.is_empty() and Gigs.job.is_empty(), "all jobs cleared")
+	for id in ["doordish", "instacrate", "yoober", "drift"]:
+		Gigs.set_online(id, false)
+
+	print("Peak heatmaps")
+	var hm: Dictionary = Gigs.heat_map("doordish")
+	var ok := hm.size() > 4
+	var top := 0.0
+	for k in hm:
+		ok = ok and hm[k] >= 0.0 and hm[k] <= 1.0
+		top = maxf(top, hm[k])
+	check(ok and is_equal_approx(top, 1.0), "heat map: %d squares, 0..1" % hm.size())
+	check(not Gigs.hottest("yoober", 8).is_empty() and not Gigs.hottest("yoober", 23).is_empty(), "hottest zone morning and night")
+	check(Gigs.heat_map("yoober", 30).size() == hm.size(), "heat map previews into tomorrow")
+	check(Gigs.zone_mult(1.0) > 1.2 and is_equal_approx(Gigs.zone_mult(0.1), 1.0), "hot zones pay more")
+	check(Gigs.surge("yoober", 12, 5) > Gigs.surge("yoober", 12, 0), "Saturday busier than Monday")
+	main.phone.open_app("doordish")
+	await frames(3)
+	main.phone.open_app("yoober")
+	await frames(3)
+	main.phone.close()
+
+
 func _use_nearest_with(text: String, near_pos: Vector3, radius: float) -> void:
 	var best = null
 	var best_d := INF

@@ -647,8 +647,8 @@ func _restaurant(lot: Node3D, rname: String, color: Color) -> void:
 		func(): _food_menu(rname, menu))
 	Kit.interactable(b, Vector3(2.8, 1, cz + 1.1), 2.0,
 		func():
-			var j := Gigs.job
-			if j.get("kind", "") == "food" and j.stage == "to_restaurant" and j.restaurant.name == rname:
+			var j := Gigs.job_for("food")
+			if j.get("stage", "") == "to_restaurant" and j.restaurant.name == rname:
 				return "Pick up DoorDish order #%d for %s" % [j.order_no, j.customer_name]
 			return "",
 		func(): Gigs.pick_up_food())
@@ -687,8 +687,8 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 				Kit.label(b, item, pos + Vector3(0, 2.95, 0), 64, Color(1, 1, 0.8), true)
 				Kit.interactable(b, pos + Vector3(0, 1, 0), 1.6,
 					func():
-						var j := Gigs.job
-						if j.get("kind", "") == "grocery" and j.stage in ["to_store", "shopping"] \
+						var j := Gigs.job_for("grocery")
+						if j.get("stage", "") in ["to_store", "shopping"] \
 								and j.store.name == sname and item in j.items and not item in j.picked:
 							return "Grab %s for %s" % [item, j.customer_name]
 						return "",
@@ -708,8 +708,8 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 	Kit.label(b, "REGISTER", Vector3(-8, 2.6, rz), 44, Color.WHITE, true)
 	Kit.interactable(b, Vector3(-14, 1, rz - 1.0), 2.0,
 		func():
-			var j := Gigs.job
-			if j.get("kind", "") == "grocery" and j.stage == "checkout" and j.store.name == sname:
+			var j := Gigs.job_for("grocery")
+			if j.get("stage", "") == "checkout" and j.store.name == sname:
 				return "Check out %s's order" % j.customer_name
 			return "",
 		func(): Gigs.checkout())
@@ -899,7 +899,7 @@ func _warehouse(lot: Node3D) -> void:
 	var load_point := b.to_global(Vector3(0, 0, 1))
 	Kit.interactable(b, Vector3(0, 1, 1), 7.0,
 		func():
-			if Gigs.job.get("kind", "") == "flex" and Gigs.job.stage == "to_station":
+			if Gigs.job_for("flex").get("stage", "") == "to_station":
 				return "Open Jungle Flex app to scan packages"
 			return "",
 		func(): main.phone.open_app("jungleflex"), true)

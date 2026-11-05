@@ -157,6 +157,30 @@ const APP_ORDER := ["yoober", "drift", "doordish", "instacrate", "jungleflex"]
 const OFFER_MINUTES := 12
 const BASE_OFFER_CHANCE := 0.06   # per game minute while online and idle
 
+# Multi-apping: run several apps at once and juggle their jobs.
+const MAX_JOBS := 3                 # active jobs at once (one per app, one passenger at a time)
+const BUSY_OFFER_MULT := 0.55       # offers come slower while you're already on a job
+const LATE_FEE_BASE := 1.0          # dollars off the payout once you're late...
+const LATE_FEE_PER_MIN := 0.15      # ...plus this much per minute late...
+const LATE_FEE_MAX := 0.5           # ...capped at this share of the payout
+const LATE_WARNING_MIN := 5.0       # heads-up this many minutes before a job is due
+
+# Demand by weekday (Mon..Sun), multiplied into each app's hourly peaks.
+const DAY_DEMAND := {
+	"ride": [0.95, 0.95, 1.0, 1.0, 1.15, 1.2, 0.95],
+	"food": [0.95, 0.95, 1.0, 1.0, 1.1, 1.15, 1.15],
+	"grocery": [0.95, 0.95, 1.0, 1.0, 1.0, 1.15, 1.2],
+	"flex": [1.0, 1.0, 1.0, 1.0, 1.0, 1.05, 0.9],
+}
+
+# Hot zones: the town is split into HEAT_CELL-sized squares. Offers start more often in hot
+# squares and pay extra there (see Gigs.heat_map and the heatmap in each app).
+const HEAT_CELL := 90.0
+const HOT_ZONE_PAY := 0.75          # pay multiplier per unit of heat above HOT_ZONE_FLOOR
+const HOT_ZONE_FLOOR := 0.4
+const HOT_EVENTS := ["Concert", "Game day at Delawhere Stadium", "Farmers market", "Street fair",
+	"Grand opening", "Office party", "Graduation", "Food truck rally"]
+
 # --- Day and night ---------------------------------------------------------------
 const LATE_NIGHT_START := 22       # 10 PM: bars-closing hours for ride apps...
 const LATE_NIGHT_END := 4          # ...until 4 AM

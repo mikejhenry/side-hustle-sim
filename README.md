@@ -71,8 +71,23 @@ gig. Skip or restart it from the pause menu.
 | **Instacrate** | Instacart | Walk the aisles grabbing items on the in-app shopping list, check out at the Instacrate register, deliver, photo. |
 | **Jungle Flex** | Amazon Flex | Reserve a block (6 AM, 10 AM, 2 PM, 6 PM), drive into the DNC9 station, scan packages in the app, deliver to a cluster of houses (a photo at each door) before the block ends. |
 
-Each app has its own peak hours (shown as a bar chart in the app). Peak hours mean more offers and
-higher pay.
+Each app has its own peak hours, and Fridays and weekends run busier. Peak hours mean more offers
+and higher pay.
+
+**Multi-apping.** Stay online on several apps and you can juggle up to 3 jobs at once: one per app,
+and only one passenger at a time. Offers come a little slower while you're busy, and every offer
+shows when it's due so you can judge whether it fits. The GPS follows one job; switch with *Follow on
+GPS* in the phone, and the HUD lists the others with their time left. Shelves, counters and doors
+work for any of your jobs, whichever one the GPS is on. Deliver late and you lose stars and pay a
+late fee ($1 plus 15 cents a minute, up to half the payout). You get a heads-up 5 minutes before a
+job you're juggling is due.
+
+**Heatmaps.** Every app shows a week heatmap of peak times: one row per day, one square per hour,
+with the current hour blinking. Every app but Jungle Flex also shows a hot zone map of town: where offers are coming from right now, or 1 to 3 hours ahead. Rides start
+in the neighborhoods in the morning and at restaurants and shops in the evening and at night;
+DoorDish follows the restaurants; Instacrate follows where customers live. Hot zones send more
+offers and pay up to 45% more (shown as *Hot zone +$* on the offer). Each app also has a daily
+event (a concert, game day, a street fair) that makes one area hot for 3 hours.
 
 ## Life systems
 
