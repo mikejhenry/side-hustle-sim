@@ -157,6 +157,49 @@ const APP_ORDER := ["yoober", "drift", "doordish", "instacrate", "jungleflex"]
 const OFFER_MINUTES := 12
 const BASE_OFFER_CHANCE := 0.06   # per game minute while online and idle
 
+# Multi-apping: run several apps at once and juggle their jobs.
+const MAX_JOBS := 3                 # active jobs at once (one per app, one passenger at a time)
+const BUSY_OFFER_MULT := 0.55       # offers come slower while you're already on a job
+const LATE_FEE_BASE := 1.0          # dollars off the payout once you're late...
+const LATE_FEE_PER_MIN := 0.15      # ...plus this much per minute late...
+const LATE_FEE_MAX := 0.5           # ...capped at this share of the payout
+const LATE_WARNING_MIN := 5.0       # heads-up this many minutes before a job is due
+
+# Demand by weekday (Mon..Sun), multiplied into each app's hourly peaks.
+const DAY_DEMAND := {
+	"ride": [0.95, 0.95, 1.0, 1.0, 1.15, 1.2, 0.95],
+	"food": [0.95, 0.95, 1.0, 1.0, 1.1, 1.15, 1.15],
+	"grocery": [0.95, 0.95, 1.0, 1.0, 1.0, 1.15, 1.2],
+	"flex": [1.0, 1.0, 1.0, 1.0, 1.0, 1.05, 0.9],
+}
+
+# Hot zones: the town is split into HEAT_CELL-sized squares. Offers start more often in hot
+# squares and pay extra there (see Gigs.heat_map and the heatmap in each app).
+const HEAT_CELL := 90.0
+const HOT_ZONE_PAY := 0.75          # pay multiplier per unit of heat above HOT_ZONE_FLOOR
+const HOT_ZONE_FLOOR := 0.4
+const HOT_EVENTS := ["Concert", "Game day at Delawhere Stadium", "Farmers market", "Street fair",
+	"Grand opening", "Office party", "Graduation", "Food truck rally"]
+
+# --- Day and night ---------------------------------------------------------------
+const LATE_NIGHT_START := 22       # 10 PM: bars-closing hours for ride apps...
+const LATE_NIGHT_END := 4          # ...until 4 AM
+const LATE_NIGHT_SURGE := 1.3      # extra pay multiplier on rides in those hours
+const ROWDY_CHANCE := 0.45         # chance a late-night rider is rowdy
+const CLEANING_FEE := 20.0         # ride apps pay this when a rider makes a mess
+# How busy the roads are each hour (1.0 = normal). Weekday rush hours are 7-9 AM and 4-6 PM.
+const TRAFFIC_BY_HOUR := [0.35, 0.3, 0.25, 0.2, 0.25, 0.4, 0.75, 1.6, 1.8, 1.4, 1.0, 1.0,
+	1.1, 1.05, 1.0, 1.15, 1.6, 1.8, 1.5, 1.0, 0.85, 0.7, 0.6, 0.45]
+const ROWDY_LINES := [
+	"\"WOOOO! Is this the party bus?!\"",
+	"\"Bro. BRO. You gotta hear this song. Turn it UP.\"",
+	"\"Can we stop for tacos? No? Okay. Okay. ...Tacos though?\"",
+	"\"I love you, man. Like, as a driver. You're my favorite driver.\"",
+	"\"*singing loudly and badly*\"",
+	"\"Is it cool if I hang out the window? It's cool. Right?\"",
+	"\"Wait, which way is my house? You know where I live, right?\"",
+]
+
 # --- Food --------------------------------------------------------------------
 # [label, price, hunger restored, energy]
 const RESTAURANTS := {

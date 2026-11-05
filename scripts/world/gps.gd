@@ -44,10 +44,24 @@ func update(from: Vector3, heading: Vector3, target: Vector3, label: String, dri
 # with a small penalty per turn so routes prefer fewer, simpler turns.
 
 const TURN_PENALTY := 25.0
+const CLOSED_PENALTY := 100000.0   # roads closed for construction (only used if there's no other way)
 
 var _edges: Array = []        # {a, b (Vector2i), pts (PackedVector3Array a -> b), len, name}
 var _adj := {}                # Vector2i -> [edge index]
 var _names := PackedStringArray()   # road name for each route segment (route[i] -> route[i+1])
+var _closed := {}             # edge index -> true while closed for construction
+
+
+## Roads closed for construction, as [[intersection a, intersection b], ...].
+func set_closed(pairs: Array) -> void:
+	if _edges.is_empty():
+		_build_graph()
+	_closed.clear()
+	for pr in pairs:
+		for ei in _edges.size():
+			var e: Dictionary = _edges[ei]
+			if (e.a == pr[0] and e.b == pr[1]) or (e.a == pr[1] and e.b == pr[0]):
+				_closed[ei] = true
 
 
 func _build_graph() -> void:
@@ -223,7 +237,7 @@ func _search(sa: Dictionary, sb: Dictionary) -> Array:
 				continue
 			var e: Dictionary = _edges[ei]
 			var other: Vector2i = e.b if e.a == node else e.a
-			var c: float = cost + e.len + _turn_cost(via, node, ei)
+			var c: float = cost + e.len + _turn_cost(via, node, ei) + (CLOSED_PENALTY if _closed.has(ei) else 0.0)
 			var key := [other, ei]
 			if c < dist.get(key, INF):
 				dist[key] = c

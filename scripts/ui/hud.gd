@@ -36,6 +36,15 @@ var _police_label: Label
 var _flash: ColorRect
 var _mirrors := {}          # "rear" / "left" / "right" -> PanelContainer holding a TextureRect
 var _mirrors_shown := false
+var windshield: Windshield
+var _sig_left: Label
+var _sig_right: Label
+var _road_warn: Label
+var _radio_panel: PanelContainer
+var _radio_title: Label
+var _radio_text: Label
+var _radio_show := 0.0       # seconds left showing the station name after tuning
+var _gaze_dot: ColorRect
 
 const TOAST_COLORS := {
 	"info": Color(0.9, 0.92, 1.0), "good": Color(0.55, 1.0, 0.6), "warn": Color(1.0, 0.85, 0.35),
@@ -49,6 +58,11 @@ func _ready() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+
+	if main:
+		windshield = Windshield.new()
+		windshield.car = main.car
+		root.add_child(windshield)
 
 	# Top-left status panel
 	var tl := _panel(root, Vector2(16, 16), Vector2(300, 0))
@@ -185,7 +199,9 @@ func _ready() -> void:
 	var srow := HBoxContainer.new()
 	srow.add_theme_constant_override("separation", 16)
 	dv.add_child(srow)
+	_sig_left = _label(srow, "<", 30, Color(0.2, 1.0, 0.35))
 	_speed = _label(srow, "0 MPH", 34)
+	_sig_right = _label(srow, ">", 30, Color(0.2, 1.0, 0.35))
 	_limit = _label(srow, "LIMIT\n30", 13, Color(0.1, 0.1, 0.1))
 	_limit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_limit.label_settings.outline_size = 0
@@ -207,7 +223,47 @@ func _ready() -> void:
 	_fuel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	frow.add_child(_fuel)
 	_car_warn = _label(dv, "", 15, Color(1, 0.5, 0.35))
+	_road_warn = _label(dv, "", 15, Color(1, 0.8, 0.3))
 	_drive.visible = false
+
+	# Car radio: station and what the DJ / ad is saying (bottom center, under the prompt).
+	_radio_panel = PanelContainer.new()
+	_radio_panel.add_theme_stylebox_override("panel", _style(Color(0.04, 0.05, 0.07, 0.78), 8))
+	_radio_panel.anchor_left = 0.5
+	_radio_panel.anchor_right = 0.5
+	_radio_panel.anchor_top = 1.0
+	_radio_panel.anchor_bottom = 1.0
+	_radio_panel.offset_left = -330
+	_radio_panel.offset_right = 330
+	_radio_panel.offset_top = -150
+	_radio_panel.offset_bottom = -150
+	_radio_panel.grow_vertical = Control.GROW_DIRECTION_END
+	_radio_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_radio_panel.visible = false
+	root.add_child(_radio_panel)
+	var rv := VBoxContainer.new()
+	_radio_panel.add_child(rv)
+	_radio_title = _label(rv, "", 15, Color(0.45, 1.0, 0.7))
+	_radio_text = _label(rv, "", 16, Color(0.92, 0.92, 0.95))
+	_radio_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if main:
+		main.car.radio.changed.connect(func(): _radio_show = 3.0)
+
+	# A small dot in the middle of the view while you look at the dashboard, to aim with.
+	_gaze_dot = ColorRect.new()
+	_gaze_dot.color = Color(1, 1, 1, 0.8)
+	_gaze_dot.size = Vector2(6, 6)
+	_gaze_dot.anchor_left = 0.5
+	_gaze_dot.anchor_top = 0.5
+	_gaze_dot.anchor_right = 0.5
+	_gaze_dot.anchor_bottom = 0.5
+	_gaze_dot.offset_left = -3
+	_gaze_dot.offset_top = -3
+	_gaze_dot.offset_right = 3
+	_gaze_dot.offset_bottom = 3
+	_gaze_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_gaze_dot.visible = false
+	root.add_child(_gaze_dot)
 
 	# Police alert (lower center)
 	_police = PanelContainer.new()
@@ -319,6 +375,8 @@ Tab or P / Y: phone (gig apps, bank, garage, maps, Hail Yeah cabs)     A: pick  
 C / LB: driving camera (first person / chase)     M / D-pad up: mirror mode
 L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
 G / D-pad right: full map     Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
+Z / X / D-pad left: turn signals     B: hazards     V: wipers     N / comma: radio
+In first person, look at a dashboard button and press E / X (or click) to use it
 F5: save to your slot        F9: load your latest save        Map: click anywhere to drop a pin
 
 THE LAW
@@ -343,7 +401,8 @@ so start with DoorDish, Instacrate and Jungle Flex.
 
 WEATHER
 Some days bring rain, storms or snow, and some mornings are foggy. Roads get
-slippery (snow most of all), but delivery pay goes up: food apps the most,
+slippery (snow most of all: brake early), and above about 40 mph in the
+rain you can hydroplane (sooner on worn tires). Use your wipers. Delivery pay goes up: food apps the most,
 groceries and rides a bit less, Jungle Flex only slightly.
 
 Dev cheats: F7 = 10x time speed, F8 = +$500, F6 = cycle weather"""
@@ -430,11 +489,45 @@ func _process(_delta: float) -> void:
 			if Game.engine_health < 50.0:
 				warns.append("CHECK ENGINE")
 			_car_warn.text = "  ".join(warns)
+			_update_car_extras()
+		else:
+			_radio_panel.visible = false
+			_gaze_dot.visible = false
 		var pos: Vector3 = main.actor_position()
 		_mm_cam.global_position = Vector3(pos.x, 150.0, pos.z)
 		_mm_marker.global_position = Vector3(pos.x, 100.0, pos.z)
 		_mm_marker.rotation = Vector3(-PI / 2.0, 0, 0)
 		_mm_marker.global_rotation.y = main.actor_heading()
+
+
+## Turn signal arrows, road grip warnings, the radio caption and the dashboard aim dot.
+func _update_car_extras() -> void:
+	var car: Car = main.car
+	var d: Dashboard = car.dash
+	var lit := d.blink_on
+	_sig_left.modulate.a = 1.0 if lit and (d.hazards or d.signal_dir == "left") else 0.12
+	_sig_right.modulate.a = 1.0 if lit and (d.hazards or d.signal_dir == "right") else 0.12
+	var road := ""
+	if car.hydroplaning > 0.0:
+		road = "HYDROPLANING!"
+		_road_warn.label_settings.font_color = Color(1, 0.35, 0.3)
+	elif car.hydroplane_risk():
+		road = "HYDROPLANE RISK: slow below %d mph" % int(car.hydroplane_mph())
+		_road_warn.label_settings.font_color = Color(1, 0.8, 0.3)
+	elif car.snow_amount() > 0.3:
+		road = "SNOW: brake early, easy on the gas"
+		_road_warn.label_settings.font_color = Color(0.75, 0.9, 1.0)
+	_road_warn.text = road
+	_road_warn.visible = road != ""
+	# Radio.
+	var r: Radio = car.radio
+	_radio_show = maxf(0.0, _radio_show - get_process_delta_time())
+	var talking := r.power and r.caption != ""
+	_radio_panel.visible = talking or _radio_show > 0.0
+	_radio_title.text = "RADIO  %s%s" % [r.display_text(), ("  |  " + r.caption_who) if talking else ""]
+	_radio_text.text = r.caption if talking else ""
+	_radio_text.visible = talking
+	_gaze_dot.visible = d.near_console
 
 
 func _update_mirrors() -> void:

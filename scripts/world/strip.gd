@@ -213,7 +213,7 @@ func _mall() -> void:
 	Kit.box(m, Vector3(37, 1.2, 61), Vector3(-2, 9.2, 0), Color(0.6, 0.2, 0.2), false)
 	var lb := Kit.label(m, "CHRISTIANA MAUL", Vector3(16.2, 6.5, 0), 220, Color(1, 0.95, 0.85))
 	lb.rotation.y = PI / 2.0
-	Kit.box(m, Vector3(0.3, 3.0, 8.0), Vector3(16.1, 1.5, 0), Kit.glass(), false)
+	Kit.box(m, Vector3(0.3, 3.0, 8.0), Vector3(16.1, 1.5, 0), Kit.lit_glass("shop"), false)
 
 
 # --- Walk-up apartments -----------------------------------------------------------
@@ -251,7 +251,9 @@ func walkup(l: Node3D, bname: String, floors: int, street: String) -> void:
 		for sx in [-1.0, 1.0]:
 			for i in 3:
 				panes.append(Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(sx * (w / 2.0 + 0.03), 1.8 + f * FLOOR_H, -5.0 + i * 5.0)))
-	Kit.multibox(b, Vector3(1.6, 1.5, 0.06), panes, Kit.glass())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(bname)
+	Kit.lit_panes(b, Vector3(1.6, 1.5, 0.06), panes, rng)
 	Kit.label(b, bname, Vector3(0, 3.6, d / 2.0 + 0.1), 90, Color(1, 0.95, 0.8))
 	Kit.box(b, Vector3(4.0, 0.25, 2.0), Vector3(0, 3.1, d / 2.0 + 1.0), Color(0.3, 0.12, 0.1), false)
 	Kit.box(l, Vector3(2.6, 0.05, 6.2), Vector3(0, 0.035, -3.0), Kit.surf("concrete"), false)

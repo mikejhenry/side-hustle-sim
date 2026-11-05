@@ -135,6 +135,43 @@ func is_night() -> bool:
 	return hour() < 6 or hour() >= 20
 
 
+## How much daylight there is (0 = night, 1 = full day). The sun rises at 6 AM and sets at
+## 6 PM; dawn and dusk each take about half an hour.
+func daylight(m: float = -1.0) -> float:
+	if m < 0.0:
+		m = minute
+	var e := (fmod(m, 1440.0) / 1440.0 - 0.25) * TAU
+	return clampf(sin(e) * 2.5 + 0.3, 0.0, 1.0)
+
+
+## Streetlights, lit windows and automatic headlights come on at dusk and go off after dawn.
+func lights_on() -> bool:
+	return daylight() < 0.45
+
+
+## Bars-closing hours (10 PM to 4 AM): ride apps pay a late-night surge and riders get rowdy.
+func is_late_night(h := -1) -> bool:
+	if h < 0:
+		h = hour()
+	return h >= GameData.LATE_NIGHT_START or h < GameData.LATE_NIGHT_END
+
+
+## How busy the roads are this hour (1.0 = normal). Morning and evening rush hours on
+## weekdays are the busiest; the small hours are nearly empty.
+func traffic_level(h := -1) -> float:
+	if h < 0:
+		h = hour()
+	var weekend := weekday() in ["Sat", "Sun"]
+	var lvl: float = GameData.TRAFFIC_BY_HOUR[h]
+	if weekend and lvl > 1.0:
+		lvl = 1.0 + (lvl - 1.0) * 0.3   # no commute on weekends
+	return lvl
+
+
+func is_rush_hour(h := -1) -> bool:
+	return traffic_level(h) >= 1.5
+
+
 func advance(mins: float, is_sleeping := false, quality := 1.0) -> void:
 	var remaining := mins
 	while remaining > 0.0:
@@ -864,6 +901,15 @@ func _setup_input() -> void:
 	_bind("camera_toggle", [KEY_C], [JOY_BUTTON_LEFT_SHOULDER])
 	_bind("mirrors", [KEY_M], [JOY_BUTTON_DPAD_UP])
 	_bind("map", [KEY_G], [JOY_BUTTON_DPAD_RIGHT])
+	# Car controls. On a gamepad, D-pad left cycles the turn signals (left, right, off); the
+	# radio, wipers and hazards are on the dashboard (look at a control and press X).
+	_bind("signal_left", [KEY_Z])
+	_bind("signal_right", [KEY_X])
+	_bind("signal_cycle", [], [JOY_BUTTON_DPAD_LEFT])
+	_bind("hazards", [KEY_B])
+	_bind("wipers", [KEY_V])
+	_bind("radio_next", [KEY_N])
+	_bind("radio_prev", [KEY_COMMA])
 	_bind("help", [KEY_F1], [JOY_BUTTON_BACK])
 	_bind("save_game", [KEY_F5])
 	_bind("load_game", [KEY_F9])
@@ -903,7 +949,8 @@ var using_pad := false
 const KEY_NAMES := {
 	"interact": ["E", "X"], "phone": ["Tab", "Y"], "pause": ["Esc", "Start"], "back": ["Esc", "B"],
 	"help": ["F1", "Back"], "mirrors": ["M", "D-pad up"], "map": ["G", "D-pad right"], "camera_toggle": ["C", "LB"],
-	"headlights": ["L", "RB"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
+	"headlights": ["L", "RB"], "signal_left": ["Z", "D-pad left"], "signal_right": ["X", "D-pad left"],
+	"hazards": ["B", "the dash"], "wipers": ["V", "the dash"], "radio_next": ["N", "the dash"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
 	"handbrake": ["Space", "A"], "sprint": ["Shift", "L3"], "jump": ["Space", "A"],
 	"gas": ["W", "RT"], "brake": ["S", "LT"], "move": ["WASD", "the left stick"],
 	"look": ["the mouse", "the right stick"], "graphics": ["F3", "the pause menu"],
@@ -933,6 +980,8 @@ var volume := 0.8           # master volume 0..1
 var mouse_sens := 1.0       # multiplier
 var pad_sens := 1.0         # right-stick look speed multiplier
 var mirror_mode := 0        # 0 = mirrors in the car, 1 = car + screen overlays, 2 = off
+var radio_station := 1      # Radio.STATIONS index
+var radio_on := true
 var invert_y := false       # look up/down inverted (mouse and right stick)
 var fov := 70.0             # walking camera field of view; the car's is a bit wider
 var fullscreen := false
@@ -941,7 +990,7 @@ var screen_fx := 1.0        # strength of the hunger / tiredness / bladder scree
 var autosave := true        # save to the autosave slot when you sleep and at midnight
 
 const OPTION_KEYS := ["volume", "mouse_sens", "pad_sens", "mirror_mode", "invert_y", "fov",
-	"fullscreen", "vsync", "screen_fx", "autosave"]
+	"fullscreen", "vsync", "screen_fx", "autosave", "radio_station", "radio_on"]
 
 
 func load_options() -> void:

@@ -13,6 +13,7 @@ var _status: Label
 var _live: Array = []         # [{node, fn}] refreshed 4x per second
 var _dirty := false
 var _tick := 0.0
+var _heat_ahead := 0          # hot zone map preview: hours from now
 
 const ICONS := {
 	"yoober": "Y", "drift": "D", "doordish": "DD", "instacrate": "IC", "jungleflex": "JF",
@@ -92,6 +93,8 @@ func close() -> void:
 
 
 func open_app(id: String) -> void:
+	if id != current_app:
+		_heat_ahead = 0
 	current_app = id
 	if not is_open:
 		open()
@@ -249,9 +252,35 @@ func _home() -> void:
 		b.add_theme_font_size_override("font_size", 14)
 	if not Gigs.offers.is_empty():
 		_lbl(_screen, "%d pending offer(s)!" % Gigs.offers.size(), 16, Color(0.5, 1, 0.6))
-	if not Gigs.job.is_empty():
-		var v := _card(Color(0.15, 0.2, 0.15))
-		_live_label(v, func(n): n.text = Gigs.status_text(), 14)
+	if not Gigs.jobs.is_empty():
+		_jobs_summary()
+
+
+## Every job you're juggling, with buttons to point the GPS at one or open its app.
+func _jobs_summary() -> void:
+	var v := _card(Color(0.15, 0.2, 0.15))
+	if Gigs.jobs.size() > 1:
+		_lbl(v, "Juggling %d/%d jobs" % [Gigs.jobs.size(), GameData.MAX_JOBS], 15, Color(1, 0.85, 0.4))
+	for j in Gigs.jobs:
+		var jj: Dictionary = j
+		var focused := is_same(jj, Gigs.job)
+		_live_label(v, func(n):
+			n.text = ("➤ " if is_same(jj, Gigs.job) else "") + Gigs.status_for(jj) + _due_text(jj), 14,
+			Color.WHITE if focused else Color(0.8, 0.8, 0.85))
+		if Gigs.jobs.size() > 1:
+			var row := HBoxContainer.new()
+			v.add_child(row)
+			var id: String = jj.app
+			if not focused:
+				_btn(row, "Follow on GPS", func(): Gigs.focus(id), Color(0.2, 0.35, 0.6))
+			_btn(row, "Open " + GameData.APPS[id].name, func(): open_app(id), GameData.APPS[id].color)
+
+
+func _due_text(j: Dictionary) -> String:
+	if j.kind == "flex":
+		return ""
+	var left := Gigs.minutes_left(j)
+	return ("  (due in %d min)" % left) if left >= 0 else ("  (LATE %d min)" % -left)
 
 
 func _gig_app(id: String) -> void:
@@ -259,7 +288,7 @@ func _gig_app(id: String) -> void:
 	_header(a.name, a.color, a.tagline)
 	var top := _card()
 	_live_label(top, func(n): n.text = "Rating: %.2f ★     %s" % [Gigs.ratings[id], Gigs.demand_label(id)], 15)
-	_demand_chart(top, id)
+	_week_heatmap(top, id)
 	var reason := Gigs.ineligible_reason(id)
 	if reason != "":
 		_lbl(top, reason, 14, Color(1, 0.5, 0.4))
@@ -268,37 +297,110 @@ func _gig_app(id: String) -> void:
 		Gigs.set_online(id, not on)
 		_rebuild(), Color(0.6, 0.15, 0.15) if on else Color(0.1, 0.55, 0.25))
 
-	if not Gigs.job.is_empty() and Gigs.job.app == id:
+	var mine := Gigs.job_for_app(id)
+	if not mine.is_empty():
 		_job_card(id)
-	elif not Gigs.job.is_empty():
-		_lbl(_screen, "You're busy with a %s job." % GameData.APPS[Gigs.job.app].name, 14, Color(1, 0.85, 0.4))
+	var others: Array = Gigs.jobs.filter(func(j): return j.app != id)
+	if not others.is_empty():
+		var names := ", ".join(others.map(func(j): return GameData.APPS[j.app].name))
+		_lbl(_screen, "Also running: %s (%d/%d jobs)" % [names, Gigs.jobs.size(), GameData.MAX_JOBS], 14, Color(1, 0.85, 0.4))
 
 	for o in Gigs.offers:
 		if o.app != id:
 			continue
 		_offer_card(o, a)
-	if on and Gigs.job.is_empty() and not Gigs.offers.any(func(o): return o.app == id):
-		_lbl(_screen, "Looking for offers..." if a.kind != "flex" else "Blocks appear about 2.5 hours before they start (6AM, 10AM, 2PM, 6PM).", 14, Color(0.7, 0.7, 0.75))
+	if on and mine.is_empty() and not Gigs.offers.any(func(o): return o.app == id):
+		var wait := "Looking for offers..." if a.kind != "flex" else "Blocks appear about 2.5 hours before they start (6AM, 10AM, 2PM, 6PM)."
+		if a.kind != "flex" and Gigs.jobs.size() >= GameData.MAX_JOBS:
+			wait = "No new offers while you're juggling %d jobs." % Gigs.jobs.size()
+		elif a.kind == "ride" and not Gigs.job_for("ride").is_empty():
+			wait = "No ride offers while you have another passenger."
+		_lbl(_screen, wait, 14, Color(0.7, 0.7, 0.75))
+	if a.kind != "flex":
+		_hot_zones(id)
 
 
-func _demand_chart(parent: Node, id: String) -> void:
-	_lbl(parent, "Peak times today (hour 0-23):", 12, Color(0.75, 0.75, 0.8))
+## Peak times for the week: one row per day, one square per hour, hotter colors are busier.
+func _week_heatmap(parent: Node, id: String) -> void:
+	_lbl(parent, "Peak times this week (midnight to midnight):", 12, Color(0.75, 0.75, 0.8))
+	var grid := GridContainer.new()
+	grid.columns = 25
+	grid.add_theme_constant_override("h_separation", 1)
+	grid.add_theme_constant_override("v_separation", 1)
+	parent.add_child(grid)
+	var cells := []
+	for wd in 7:
+		var day := Label.new()
+		day.text = GameData.DAY_NAMES[wd]
+		day.custom_minimum_size = Vector2(30, 11)
+		day.add_theme_font_size_override("font_size", 10)
+		day.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+		grid.add_child(day)
+		for h in 24:
+			var cell := ColorRect.new()
+			cell.custom_minimum_size = Vector2(11, 11)
+			var s := Gigs.surge(id, h, wd)
+			if Gigs.app(id).kind == "ride" and Game.is_late_night(h):
+				s *= GameData.LATE_NIGHT_SURGE    # bars-closing surge
+			cell.set_meta("base", WorldMap.heat_color((s - 0.9) / 1.1))
+			cell.set_meta("at", Vector2i(wd, h))
+			cell.color = cell.get_meta("base")
+			grid.add_child(cell)
+			cells.append(cell)
+	var axis := _lbl(parent, "        12a              6a              12p              6p", 10, Color(0.6, 0.6, 0.65))
+	axis.autowrap_mode = TextServer.AUTOWRAP_OFF
+	# The square for right now blinks white.
+	var fn := func(_n):
+		var now := Vector2i((Game.day - 1) % 7, Game.hour())
+		var blink := int(Time.get_ticks_msec() / 500) % 2 == 0
+		for c in cells:
+			if is_instance_valid(c):
+				c.color = Color.WHITE if (c.get_meta("at") == now and blink) else c.get_meta("base")
+	fn.call(grid)
+	_live.append({"node": grid, "fn": fn})
+	var legend := HBoxContainer.new()
+	legend.add_theme_constant_override("separation", 12)
+	parent.add_child(legend)
+	for k in [["quiet", 0.0], ["busy", 0.45], ["very busy", 0.9]]:
+		var l := Label.new()
+		l.text = "■ " + k[0]
+		l.add_theme_font_size_override("font_size", 11)
+		l.add_theme_color_override("font_color", WorldMap.heat_color(k[1]).lightened(0.15))
+		legend.add_child(l)
+
+
+## Map of where this app's orders come from, with an hour-ahead preview.
+func _hot_zones(id: String) -> void:
+	var v := _card()
+	var h := Game.hour() + _heat_ahead
+	_lbl(v, "Hot zones %s" % ("right now" if _heat_ahead == 0 else "at " + Game.time_string(fmod(h * 60.0, 1440.0))), 15, Color(1, 0.75, 0.4))
+	var m := WorldMap.new()
+	m.main = main
+	m.show_street_names = false
+	m.heat_app = id
+	m.heat_hour = h
+	m.custom_minimum_size = Vector2(0, 220)
+	m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	m.place_picked.connect(func(p): _pick_place(p))
+	v.add_child(m)
+	var best := Gigs.hottest(id, h)
+	if not best.is_empty():
+		var r: Rect2 = Gigs.cell_rect(best.cell)
+		var center := Vector3(r.get_center().x, 0, r.get_center().y)
+		var here: Vector3 = main.actor_position()
+		_lbl(v, "Hottest: %s (%.1f mi away). Hot zones pay up to +%d%% and send more offers." % [
+			best.label, Gigs._miles(here, center), roundi((Gigs.zone_mult(1.0) - 1.0) * 100.0)], 12, Color(0.85, 0.85, 0.9))
+	var ev := Gigs.hot_event(id, Game.day + floori(h / 24.0))
+	if not ev.is_empty():
+		_lbl(v, "Today: %s, %s to %s." % [ev.label, Game.time_string(ev.start * 60.0), Game.time_string(fmod(ev.end * 60.0, 1440.0))], 12, Color(1, 0.6, 0.5))
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 2)
-	row.custom_minimum_size.y = 40
-	parent.add_child(row)
-	for h in 24:
-		var s := Gigs.surge(id, h)
-		var holder := VBoxContainer.new()
-		holder.alignment = BoxContainer.ALIGNMENT_END
-		holder.custom_minimum_size = Vector2(10, 40)
-		row.add_child(holder)
-		var bar := ColorRect.new()
-		bar.custom_minimum_size = Vector2(10, 10.0 + (s - 1.0) * 30.0)
-		bar.color = Color(1, 0.55, 0.15) if s > 1.0 else Color(0.35, 0.35, 0.4)
-		holder.add_child(bar)
-		var fn := func(n): n.color = Color(0.3, 1, 0.4) if Game.hour() == h else (Color(1, 0.55, 0.15) if s > 1.0 else Color(0.35, 0.35, 0.4))
-		_live.append({"node": bar, "fn": fn})
+	v.add_child(row)
+	for ahead in [0, 1, 2, 3]:
+		var a: int = ahead
+		var b := _btn(row, "Now" if a == 0 else "+%dh" % a, func():
+			_heat_ahead = a
+			_rebuild(), Color(0.45, 0.3, 0.15) if a == _heat_ahead else Color(0.2, 0.2, 0.24))
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
 func _offer_card(o: Dictionary, _a: Dictionary) -> void:
@@ -309,6 +411,8 @@ func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 			_lbl(v, "%s • %.1f mi trip • pickup %.1f mi away%s" % [o.passenger, o.miles, o.pickup_miles,
 				" • %s surge +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
 			_lbl(v, "From: %s\nTo: %s" % [o.pickup.name, o.dropoff.name], 13, Color(0.85, 0.85, 0.9))
+			if o.get("night_pay", 0.0) > 0.0:
+				_lbl(v, "Late-night surge +$%.2f%s" % [o.night_pay, " • Rider may be rowdy" if o.get("rowdy", false) else ""], 13, Color(0.75, 0.6, 1.0))
 		"food":
 			_lbl(v, "%.1f mi total • incl. $%.0f tip%s%s" % [o.miles, o.tip, " • Peak Pay +$%.2f" % o.peak_pay if o.peak_pay > 0 else "",
 				" • %s boost +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
@@ -320,24 +424,38 @@ func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 		"flex":
 			_lbl(v, "Block %s - %s • %d packages" % [Game.abs_time_string(o.start), Game.time_string(fmod(o.end, 1440.0)), o.packages], 14)
 			_lbl(v, "Station: Jungle Flex DNC9 (east side, near the port)", 13, Color(0.85, 0.85, 0.9))
+	if o.get("zone_pay", 0.0) > 0.0:
+		_lbl(v, "🔥 Hot zone +$%.2f" % o.zone_pay, 13, Color(1, 0.6, 0.3))
+	if o.kind != "flex":
+		_lbl(v, "Due by %s" % Game.abs_time_string(o.deadline), 12, Color(0.8, 0.8, 0.85))
 	_live_label(v, func(n): n.text = "Expires in %d min" % maxi(0, int(o.expires - Game.total_minutes())), 12, Color(1, 0.8, 0.4))
+	var block := Gigs.accept_block_reason(o)
+	if block != "":
+		_lbl(v, block, 12, Color(1, 0.6, 0.45))
+	elif not Gigs.jobs.is_empty():
+		_lbl(v, "⚠ Stacking with %d other job(s). Late deliveries cost a late fee and stars." % Gigs.jobs.size(), 12, Color(1, 0.8, 0.4))
 	var row := HBoxContainer.new()
 	v.add_child(row)
 	var acc := _btn(row, "  ACCEPT  ", func(): Gigs.accept(o.id), Color(0.1, 0.55, 0.25))
 	acc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	acc.disabled = not Gigs.job.is_empty()
+	acc.disabled = block != ""
 	_btn(row, "Decline", func(): Gigs.decline(o.id), Color(0.35, 0.2, 0.2))
 
 
-func _job_card(_id: String) -> void:
-	var j := Gigs.job
+func _job_card(id: String) -> void:
+	var j := Gigs.job_for_app(id)
 	var v := _card(Color(0.12, 0.15, 0.22))
 	_lbl(v, "ACTIVE JOB  •  $%.2f" % j.pay, 18, Color(0.6, 0.85, 1))
-	_live_label(v, func(n): n.text = Gigs.status_text(), 14)
+	_live_label(v, func(n): n.text = Gigs.status_for(j), 14)
 	if j.kind != "flex":
 		_live_label(v, func(n):
-			var left := int(Gigs.job.get("deadline", 0.0) - Game.total_minutes()) if not Gigs.job.is_empty() else 0
-			n.text = ("Due in %d min" % left) if left >= 0 else ("LATE by %d min" % -left), 13, Color(1, 0.8, 0.4))
+			var left := Gigs.minutes_left(j)
+			if left >= 0:
+				n.text = "Due in %d min" % left
+			else:
+				n.text = "LATE by %d min  •  late fee so far -$%.2f" % [-left, Gigs.late_fee(j, j.pay)], 13, Color(1, 0.8, 0.4))
+	if not is_same(j, Gigs.job):
+		_btn(v, "Follow this job on GPS", func(): Gigs.focus(id), Color(0.2, 0.35, 0.6))
 	match j.stage:
 		"to_pickup":
 			_live_button(v, "ARRIVED: START TRIP", func(): Gigs.start_trip(), func(): return Gigs.can_start_trip(), Color(0.1, 0.5, 0.25))
@@ -346,14 +464,14 @@ func _job_card(_id: String) -> void:
 			_live_button(v, "COMPLETE TRIP", func(): Gigs.end_trip(), func(): return Gigs.can_end_trip(), Color(0.1, 0.5, 0.25))
 			_lbl(v, "Passenger: %s. Drive smoothly, crashes cost stars." % j.passenger, 12, Color(0.7, 0.7, 0.75))
 		"confirm_photo":
-			_live_button(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_photo(), func(): return Gigs.can_take_photo(), Color(0.1, 0.5, 0.25))
+			_live_button(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_photo(id), func(): return Gigs.can_take_photo(id), Color(0.1, 0.5, 0.25))
 			_lbl(v, "Stand by the door to take the photo.", 12, Color(0.7, 0.7, 0.75))
 		"to_station":
 			_live_button(v, "SCAN PACKAGES", func(): Gigs.scan_packages(), func(): return Gigs.can_scan(), Color(0.1, 0.5, 0.25))
 			_lbl(v, "Drive into the station's loading zone. Scanning opens 30 min before the block.", 12, Color(0.7, 0.7, 0.75))
 		"delivering":
 			if not j.get("photo_due", {}).is_empty():
-				_live_button(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_package_photo(), func(): return Gigs.can_take_photo(), Color(0.1, 0.5, 0.25))
+				_live_button(v, "TAKE DROP-OFF PHOTO  📷", func(): Gigs.confirm_package_photo(), func(): return Gigs.can_take_photo(id), Color(0.1, 0.5, 0.25))
 				_lbl(v, "Package left at %s. Stand by the door to take the photo." % j.photo_due.name, 12, Color(0.7, 0.7, 0.75))
 			for s in j.stops:
 				_lbl(v, "📦 " + s.name, 13)
@@ -363,7 +481,7 @@ func _job_card(_id: String) -> void:
 		for item in j.items:
 			var done: bool = item in j.picked
 			_lbl(list, ("✔ " if done else "☐ ") + item, 15, Color(0.5, 1, 0.5) if done else Color.WHITE)
-	_btn(v, "Cancel job (hurts rating)", func(): Gigs.cancel_job(), Color(0.3, 0.15, 0.15))
+	_btn(v, "Cancel job (hurts rating)", func(): Gigs.cancel_job(id), Color(0.3, 0.15, 0.15))
 
 
 func _bank() -> void:
