@@ -24,6 +24,7 @@ func _ready() -> void:
 	main.auto_tutorial = false
 	add_child(main)
 	main.traffic.police_enabled = false
+	main.traffic.auto_density = false
 	await frames(30)
 	var town = main.town
 	print("World")
@@ -114,6 +115,7 @@ func _ready() -> void:
 	await _weather_tests()
 	await _map_tests()
 	await _jump_tests()
+	await _day_night_tests()
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -717,3 +719,77 @@ func _jump_tests() -> void:
 	check(landed, "landing bends the knees")
 	await frames(60)
 	check(h._air < 0.05, "back to normal after landing")
+
+
+func _day_night_tests() -> void:
+	print("Day and night")
+	var saved_min: float = Game.minute
+	var saved_day: int = Game.day
+	var saved_car: String = Game.car_id
+	var tr: Traffic = main.traffic
+	Game.day = 1   # a Monday
+	Game.minute = 12 * 60.0
+	await frames(5)
+	check(Game.daylight() == 1.0 and not Game.lights_on(), "noon is full daylight")
+	check(not main.town._street_lights[0].visible, "streetlights off at noon")
+	Game.minute = 18 * 60.0 + 20.0
+	check(Game.lights_on(), "lights come on at dusk (6:20 PM, daylight %.2f)" % Game.daylight())
+	Game.minute = 21 * 60.0
+	await frames(5)
+	check(main.town._street_lights[0].visible, "streetlights on at night")
+	check(Kit.lit_glass("shop").emission_energy_multiplier > 0.4 and Kit.lit_glass("home").emission_energy_multiplier > 0.4, "shop and house windows glow")
+	check(tr.night and tr.cars[0]._night.visible, "traffic has headlights on")
+	if main.is_driving():
+		main.exit_car()
+	main.enter_car()
+	check(main.car.headlights_on, "your headlights come on at night")
+	main.exit_car()
+	# Rush hour: busiest at 8 AM and 5 PM on weekdays, nearly empty at 3 AM, calmer on weekends.
+	check(Game.is_rush_hour(8) and Game.is_rush_hour(17) and not Game.is_rush_hour(13), "rush hours 8 AM and 5 PM")
+	Game.minute = 3 * 60.0
+	var night_n := tr.target_count()
+	Game.minute = 8 * 60.0
+	var rush_n := tr.target_count()
+	Game.day = 6   # Saturday
+	var weekend_n := tr.target_count()
+	Game.day = 1
+	check(rush_n > weekend_n and weekend_n > night_n, "traffic: %d cars at rush hour, %d on a weekend morning, %d at 3 AM" % [rush_n, weekend_n, night_n])
+	# The traffic manager adds and removes cars out of sight to match.
+	tr.auto_density = true
+	main.player.global_position = main.town.spawn_point
+	Game.minute = 3 * 60.0
+	for i in 40:
+		tr._density_t = 0.0
+		tr._update_density(0.1)
+	check(tr.civilians() == night_n, "late night thins traffic to %d cars (%d in reserve)" % [tr.civilians(), tr.reserve.size()])
+	Game.minute = 8 * 60.0
+	for i in 60:
+		tr._density_t = 0.0
+		tr._update_density(0.1)
+	check(tr.civilians() >= rush_n - 2, "rush hour fills the roads back up (%d cars)" % tr.civilians())
+	var hidden_ok := true
+	for c in tr.cars:
+		hidden_ok = hidden_ok and c.visible
+	for c in tr.reserve:
+		hidden_ok = hidden_ok and not c.visible
+	check(hidden_ok, "only cars on the road are shown")
+	tr.auto_density = false
+	# Late-night rides: surge pay and rowdy riders.
+	Game.car_id = "civil"
+	Game.minute = 23 * 60.0
+	Gigs.set_online("yoober", true)
+	Gigs._make_offer("yoober")
+	var o: Dictionary = Gigs.offers.back()
+	check(o.get("night_pay", 0.0) > 0.0, "11 PM ride includes a late-night surge (+$%.2f)" % o.get("night_pay", 0.0))
+	Gigs.decline(o.id)
+	Game.minute = 13 * 60.0
+	Gigs._make_offer("yoober")
+	o = Gigs.offers.back()
+	check(o.get("night_pay", 0.0) == 0.0 and not o.get("rowdy", false), "no late-night surge or rowdy riders at 1 PM")
+	Gigs.decline(o.id)
+	Gigs.set_online("yoober", false)
+	check(Gigs.rowdy_outcome(0.1).tip > 0.0 and Gigs.rowdy_outcome(0.5).has("clean_minutes") and Gigs.rowdy_outcome(0.7).stars < 0.0, "rowdy riders: big tips, messes, bad ratings")
+	Game.minute = saved_min
+	Game.day = saved_day
+	Game.car_id = saved_car
+	await frames(5)
