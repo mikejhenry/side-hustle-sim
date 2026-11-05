@@ -8,6 +8,10 @@ extends Node3D
 ## (ahead and to the sides, not behind) with a clear line of sight. Speeding or crashing in
 ## front of one starts a chase: it follows the GPS route to you, lights flashing, until you
 ## stop (ticket) or get far enough away for long enough (escaped).
+##
+## At rush hour most drivers head downtown, where traffic slows to a crawl. Drivers stuck
+## behind you (or in a long jam) lean on the horn. Roads closed for construction are left
+## out of everyone's turns, and everyone stops for people in the crosswalk.
 
 signal chase_started(reason: String)
 signal chase_ended(result: String)
@@ -49,6 +53,8 @@ var reserve: Array = []        # spare civilian cars, parked out of sight until 
 var auto_density := true       # follow rush hour / late night (tests turn it off)
 var night := false
 var _density_t := 0.0
+var honks := 0                 # how many times traffic has honked (for tests)
+var _last_honk := -10.0
 
 
 func build() -> void:
@@ -62,6 +68,7 @@ func build() -> void:
 		var d: Vector2i = dirs[_rng.randi() % dirs.size()]
 		var car := AICar.new()
 		car.traffic = self
+		car.horn_pitch = _rng.randf_range(0.8, 1.25)
 		add_child(car)
 		car.setup(_random_data(), node, d, _rng.randf_range(0.1, 0.8))
 		if car.global_position.distance_to(avoid) < 30.0 or _too_close(car):
@@ -123,7 +130,13 @@ func _update_density(delta: float) -> void:
 			var node := Vector2i(_rng.randi_range(0, town.N), _rng.randi_range(0, town.N))
 			if node_pos(node).distance_to(me) < HIDE_RANGE + 20.0:
 				continue
+			if rush_hour() and _rng.randf() < 0.8:
+				node = Vector2i(_rng.randi_range(1, 4), _rng.randi_range(2, 4))
+				if node_pos(node).distance_to(me) < HIDE_RANGE + 20.0:
+					continue
 			var dirs := _exits(node, Vector2i.ZERO)
+			if dirs.is_empty():
+				continue
 			var car: AICar = reserve.pop_back()
 			car.place(node, dirs[_rng.randi() % dirs.size()], _rng.randf_range(0.1, 0.8))
 			if _too_close(car):
@@ -137,6 +150,65 @@ func _update_density(delta: float) -> void:
 				cars.erase(c)
 				_park(c)
 				break
+	elif rush_hour() and cars.filter(func(c): return downtown(c.global_position)).size() < civilians() * 0.6:
+		# Cars that wandered out of town (out of your sight) come back downtown for the jam.
+		for c in cars:
+			if not c.is_cop and not downtown(c.global_position) and c.global_position.distance_to(me) > HIDE_RANGE:
+				cars.erase(c)
+				_park(c)
+				_density_t = 0.0
+				break
+
+
+## Jumps straight to this hour's traffic (tests, and after a big time skip).
+func rebalance() -> void:
+	var saved := auto_density
+	auto_density = true
+	for i in 120:
+		if civilians() == target_count():
+			break
+		_density_t = 0.0
+		_update_density(0.1)
+	auto_density = saved
+
+
+## Downtown, where the rush-hour jams are.
+func downtown(p: Vector3) -> bool:
+	var B: float = town.B
+	return p.x > 0.8 * B and p.x < 4.2 * B and p.z > 1.8 * B and p.z < 4.2 * B
+
+
+## Share of normal cruising speed here: downtown crawls at rush hour.
+func speed_factor(p: Vector3) -> float:
+	return 0.55 if rush_hour() and downtown(p) else 1.0
+
+
+func rush_hour() -> bool:
+	return Game.is_rush_hour()
+
+
+## Cars on a road that just closed for construction leave traffic.
+func clear_segment(a: Vector2i, b: Vector2i) -> void:
+	for c in cars.duplicate():
+		if c.is_cop:
+			continue
+		var on: bool = (c._node_from == a and c._node_from + c._dir == b) or (c._node_from == b and c._node_from + c._dir == a)
+		if on:
+			cars.erase(c)
+			_park(c)
+
+
+## Plays a honk from `car` if nobody else just honked (so jams don't turn into noise).
+func try_honk(car: AICar, double := false) -> bool:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_honk < 1.4:
+		return false
+	if main and car.global_position.distance_to(main.actor_position()) > 110.0:
+		return false
+	_last_honk = now
+	honks += 1
+	car.honk(double)
+	return true
 
 
 func _park(car: AICar) -> void:
@@ -221,9 +293,12 @@ func link_from(n: Vector2i, d: Vector2i) -> Dictionary:
 ## Directions you can leave an intersection by, never straight back the way you came.
 func _exits(n: Vector2i, came: Vector2i) -> Array:
 	var out := []
+	var works: Node = main.get("construction") if main else null
 	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 		var m: Vector2i = n + d
 		if (m.x < 0 or m.y < 0 or m.x > town.N or m.y > town.N) and link_from(n, d).is_empty():
+			continue
+		if works and works.is_closed(n, m):
 			continue
 		if d == -came and came != Vector2i.ZERO:
 			continue
@@ -235,22 +310,34 @@ func pick_exit(n: Vector2i, came: Vector2i) -> Vector2i:
 	var opts := _exits(n, came)
 	if opts.is_empty():
 		return -came
+	# At rush hour, most drivers are headed downtown.
+	if rush_hour() and opts.size() > 1 and _rng.randf() < 0.7:
+		var center := Vector2(2.5, 3.0)
+		var best: Vector2i = opts[0]
+		for d in opts:
+			if Vector2(n + d).distance_to(center) < Vector2(n + best).distance_to(center):
+				best = d
+		return best
 	# Going straight is a bit more common than turning.
 	if came in opts and _rng.randf() < 0.45:
 		return came
 	return opts[_rng.randi() % opts.size()]
 
 
-## Things a car must not drive into, as [position, is_ai_car]: you, your car, other traffic.
+## Things a car must not drive into, as [position, kind]: you or your car ("player"),
+## other traffic ("car"), people in a crosswalk ("ped").
 func obstacles(except: Node) -> Array:
 	var out := []
 	if main:
-		out.append([main.car.global_position, false])
+		out.append([main.car.global_position, "player"])
 		if not main.is_driving():
-			out.append([main.player.global_position, false])
+			out.append([main.player.global_position, "player"])
+		if main.get("pedestrians"):
+			for p in main.pedestrians.in_road():
+				out.append([p, "ped"])
 	for c in cars:
 		if c != except:
-			out.append([c.global_position, true])
+			out.append([c.global_position, "car"])
 	return out
 
 
@@ -429,6 +516,12 @@ class AICar:
 	var _flash_t := 0.0
 	var _siren: AudioStreamPlayer3D
 	var _night: Node3D        # head/tail lights, shown after dark
+	# Horn
+	var horn_pitch := 1.0
+	var blocker := ""         # what we're braking for: player, car, ped (or "")
+	var _horn: AudioStreamPlayer3D
+	var _honk_t := 0.0        # seconds stuck behind the same kind of thing
+	var _honked := 0          # honks since we got stuck (each one a bit more impatient)
 
 	func setup(data: Dictionary, node: Vector2i, d: Vector2i, start_frac: float) -> void:
 		sync_to_physics = false
@@ -463,7 +556,39 @@ class AICar:
 		_dir = d
 		_queue_straight()
 		_s = _legs[0][3] * start_frac
+		_honk_t = 0.0
+		_honked = 0
 		_apply_pose()
+
+	func honk(double := false) -> void:
+		if _horn == null:
+			_horn = AudioStreamPlayer3D.new()
+			_horn.stream = Sfx.get_stream("horn")
+			_horn.unit_size = 14.0
+			_horn.max_distance = 140.0
+			_horn.volume_db = -4.0
+			_horn.position.y = 0.8
+			add_child(_horn)
+		_horn.pitch_scale = horn_pitch
+		_horn.play()
+		if double and is_inside_tree():
+			get_tree().create_timer(0.32).timeout.connect(func():
+				if is_instance_valid(_horn):
+					_horn.play())
+
+	## Leans on the horn when stuck: quickly when it's you in the way (on a green, or just
+	## sitting there), after a long wait in a jam.
+	func _impatience(delta: float, target: float) -> void:
+		if speed > 0.6 or target > 0.5 or blocker == "" or blocker == "ped":
+			_honk_t = 0.0
+			_honked = 0 if speed > 2.0 else _honked
+			return
+		_honk_t += delta
+		var limit := 2.0 if blocker == "player" else (10.0 if traffic.rush_hour() else 22.0)
+		limit += _honked * 2.5
+		if _honk_t > limit and traffic.try_honk(self, _honked > 0 or randf() < 0.3):
+			_honk_t = 0.0
+			_honked += 1
 
 	static var _head_mat: StandardMaterial3D
 	static var _tail_mat: StandardMaterial3D
@@ -668,16 +793,19 @@ class AICar:
 		var fwd := global_basis.z
 		var right := Traffic.right_of(fwd)
 		var gap := INF
+		blocker = ""
 		for o in traffic.obstacles(self):
 			# Creeping past a standoff: ignore other AI cars (and, for a cop pulling away after a
-			# stop, your parked car too).
-			if (o[1] or mode == "return") and _creep > 0.0:
+			# stop, your parked car too). Never people.
+			if (o[1] == "car" or (mode == "return" and o[1] == "player")) and _creep > 0.0:
 				continue
 			var rel: Vector3 = o[0] - global_position
 			rel.y = 0.0
 			var ahead := rel.dot(fwd)
 			if ahead > 0.0 and ahead < Traffic.LOOK_AHEAD and absf(rel.dot(right)) < 2.4:
-				gap = minf(gap, ahead)
+				if ahead < gap:
+					gap = ahead
+					blocker = o[1]
 		if gap < INF:
 			return minf(target, maxf(0.0, (gap - 6.5) * 1.2))
 		return target
@@ -758,12 +886,13 @@ class AICar:
 				_return_to_lane(delta)
 				return
 		var leg: Array = _legs[0]
-		var target := Traffic.TURN_SPEED if leg[4] else Traffic.CRUISE
+		var cruise := Traffic.CRUISE * traffic.speed_factor(global_position)
+		var target := Traffic.TURN_SPEED if leg[4] else cruise
 		# Ease off before a corner.
 		if not leg[4]:
 			var left := float(leg[3]) - _s
 			if left < 14.0:
-				target = lerpf(Traffic.TURN_SPEED + 2.0, Traffic.CRUISE, left / 14.0)
+				target = lerpf(minf(Traffic.TURN_SPEED + 2.0, cruise), cruise, left / 14.0)
 		# Brake for anything ahead in our lane.
 		_creep = maxf(0.0, _creep - delta)
 		target = _gap_speed(target)
@@ -774,6 +903,8 @@ class AICar:
 			if tc and to_line < 45.0 and tc.must_stop(_node_from + _dir, _dir, to_line):
 				# Brake smoothly so we stop about 2 m before the line.
 				target = 0.0 if to_line < 2.0 else minf(target, sqrt(2.0 * Traffic.BRAKE * 0.7 * (to_line - 2.0)) + 0.3)
+		var at_red := blocker == "" and target < 0.5
+		_impatience(delta, target if not at_red else 1.0)
 		if speed < 0.3 and target < 0.5:
 			waited += delta
 			# Two AI cars blocking each other would wait forever, so one creeps through.
