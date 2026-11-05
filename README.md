@@ -158,14 +158,38 @@ their way.
 
 All balance numbers (prices, pay, wear rates, need rates) live in `scripts/data/game_data.gd`.
 
+## Story and goals
+
+- **Intro.** Your first game opens with a short story: laid off from the Mega-Mart warehouse,
+  $140 to your name, a room at Dottie's, and a Punta bought from Cousin Ray on a $1,200 IOU.
+  Replay it from the Hustle Hub app.
+- **Milestones** give the game a direction: finish your first gig, earn your first $250, change
+  the Punta's oil, make rent, **pay Ray back for the car**, upgrade to a 2011+ car, **move out of
+  the rented room**, own a car free and clear, earn $10,000, and finally move into the house in
+  Brandywine Hills. Your next goal shows on the HUD when you're not on a job.
+- **Hustle Hub app**: your next goal, Ray's IOU (send $50, $100, $250 or pay it all off),
+  three **daily challenges** (reset at midnight) and two **weekly challenges** (reset each Monday)
+  that pay cash bonuses, your milestones, and your regulars.
+- **Texts app**: recurring characters text you. Mom checks in, Cousin Ray nudges you about the
+  IOU, Dottie warns you when rent is close and you're short, and Mari, a veteran driver, sends tips.
+- **Regulars** show up in gig offers: Mr. Pemberton, a picky customer who always orders to the
+  same house and tips extra when you're on time, and Darnell, a night-shift nurse who rides with
+  you once you can drive for Yoober or Drift.
+
+All the story's words and numbers live in `scripts/data/story_data.gd`.
+
 ## Project layout
 
 ```
-project.godot             Godot project (autoloads: Game, Gigs)
+project.godot             Godot project (autoloads: Game, Gigs, Story)
 scenes/main.tscn          Entry scene, everything else is built in code
 scripts/main.gd           Wires world, player, car, HUD, phone; walking <-> driving
 scripts/autoload/game.gd  Clock, money, needs, bills, housing, car condition, save/load, input map
 scripts/autoload/gigs.gd  Gig apps: online state, offers, peak times, job state machine
+scripts/autoload/story.gd Milestones, challenges, texts, Ray's IOU, regulars
+scripts/data/story_data.gd  Story words: intro, characters, milestones, challenges
+scripts/ui/intro.gd       Story intro cards
+scripts/ui/story_screens.gd  Hustle Hub and Texts phone apps
 scripts/data/game_data.gd All tunable data (cars, homes, apps, menus, rates)
 scripts/world/town.gd     Procedural New Castlewood County map, buildings, interiors
 scripts/world/kit.gd      Box/label/building/material helpers
@@ -192,6 +216,7 @@ docs/DESIGN.md            Design doc and roadmap
 ```
 godot --headless --path . --import
 godot --headless --path . res://tests/smoke_test.tscn
+godot --headless --path . res://tests/story_test.tscn
 ```
 
 Boots the game, drives the car, and completes one job in every app, plus bills, eviction, sleep,
