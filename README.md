@@ -40,6 +40,11 @@ No assets to download: the town is built in code at startup, and the surface tex
 | L | RB | Headlights |
 | R | D-pad down | Flip the car upright |
 | H | R3 | Horn |
+| Z / X | D-pad left (cycles left, right, off) | Turn signals |
+| B | dashboard | Hazard lights |
+| V | dashboard | Wipers: off / on / fast |
+| N / , | dashboard | Radio: next / previous station (and off) |
+| Look at a dash button + E or click | Look + X | Use the dashboard (radio, wipers, hazards, GPS mount) |
 | Esc | Start | Pause menu (resume, map, controls, save/load, graphics, tutorial, quit) |
 | F1 | Back | Controls |
 | F3 | | Graphics quality: high / low (low is the default on Intel graphics) |
@@ -141,6 +146,31 @@ slippery (snow is worst), and snow whitens the grass. Bad weather pays: food del
 the biggest boost (+30% rain, +45% storm, +50% snow), groceries and rides a bit less, Jungle Flex
 only a few percent. The clock line on the HUD shows the current weather.
 
+**Driving feel.**
+- *Weather grip.* Wet roads cost a little grip and braking, snow a lot: stops take about 70%
+  longer and the rear steps out if you're heavy on the gas in a turn. In the rain, standing water
+  can make you hydroplane above about 40 mph (38 in a storm), and worn tires hydroplane sooner
+  (bald ones around 30). For a second or so the wheel and gas barely respond. The HUD warns you
+  when you're over the hydroplaning speed. Tires squeal (or hiss on wet roads) when you slide.
+- *Turn signals* blink on the car and on the HUD, tick, and cancel themselves after a turn.
+  Hazards blink all four.
+- *Wipers.* Rain and snow build up on the windshield (faster when you drive), creep up the glass
+  at speed, and the wipers sweep them off.
+- *Dashboard.* A head unit on the center console: radio tune buttons and display, wipers,
+  hazards, and the phone mount switch. Look at a button (a dot shows in the middle of the view)
+  and press E / X or click.
+- *Phone GPS mount.* Your phone sits on a windshield mount showing the next turn, the distance,
+  a heading-up map with your route, your speed and the time.
+- *Radio.* Five stations, all music synthesized in code: 88.3 Castlewood Public Radio (talk),
+  93.7 The Hustle (hip-hop), 97.5 The Breeze (smooth jazz), 99.9 Night Drive (synthwave) and
+  104.5 The Pickup (country). DJs back-announce parody songs and tell you which app is busy or
+  what the weather is paying; ads for local businesses (Honest Al's, DriveThyme, Lube & Tube,
+  WahWah...) and traffic and weather break in. Voices are babble with captions on screen.
+  Stations keep playing while you're tuned away. Your station is remembered.
+
+![Dashboard, GPS mount and radio](docs/screenshots/26_dashboard_gps_radio.png)
+![Wipers](docs/screenshots/29_wipers.png)
+
 **Day and night.** The sun rises at 6 AM and sets at 6 PM, with an orange glow on the horizon
 at dawn and dusk. When it gets dark the streetlights come on, shop windows, houses and apartments
 light up, every car in traffic turns on its headlights and taillights, and your own headlights
@@ -207,6 +237,11 @@ scripts/world/construction.gd Daily road closures (barricades, work zone, detour
 scripts/world/parked_cars.gd  Cars parked along the cross streets
 scripts/world/birds.gd    Pigeon flocks and gulls
 scripts/audio/sfx.gd      Sound effects synthesized in code
+scripts/audio/music.gd    Radio music and DJ babble synthesized in code
+scripts/audio/radio.gd    Car radio: stations, DJs, ads, captions
+scripts/vehicle/dashboard.gd  Turn signals, hazards, wipers, dash buttons, phone mount
+scripts/ui/gps_screen.gd  The mounted phone's GPS screen
+scripts/ui/windshield.gd  Rain and snow on the windshield, wiper sweeps
 scripts/audio/ambience.gd District soundscapes (synthesized), mixed by place and time of day
 scripts/ui/tutorial.gd    Guided first-day tutorial
 tests/                    Headless smoke test and screenshot renderer

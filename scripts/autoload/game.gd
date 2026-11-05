@@ -808,6 +808,15 @@ func _setup_input() -> void:
 	_bind("camera_toggle", [KEY_C], [JOY_BUTTON_LEFT_SHOULDER])
 	_bind("mirrors", [KEY_M], [JOY_BUTTON_DPAD_UP])
 	_bind("map", [KEY_G], [JOY_BUTTON_DPAD_RIGHT])
+	# Car controls. On a gamepad, D-pad left cycles the turn signals (left, right, off); the
+	# radio, wipers and hazards are on the dashboard (look at a control and press X).
+	_bind("signal_left", [KEY_Z])
+	_bind("signal_right", [KEY_X])
+	_bind("signal_cycle", [], [JOY_BUTTON_DPAD_LEFT])
+	_bind("hazards", [KEY_B])
+	_bind("wipers", [KEY_V])
+	_bind("radio_next", [KEY_N])
+	_bind("radio_prev", [KEY_COMMA])
 	_bind("help", [KEY_F1], [JOY_BUTTON_BACK])
 	_bind("save_game", [KEY_F5])
 	_bind("load_game", [KEY_F9])
@@ -847,7 +856,8 @@ var using_pad := false
 const KEY_NAMES := {
 	"interact": ["E", "X"], "phone": ["Tab", "Y"], "pause": ["Esc", "Start"], "back": ["Esc", "B"],
 	"help": ["F1", "Back"], "mirrors": ["M", "D-pad up"], "map": ["G", "D-pad right"], "camera_toggle": ["C", "LB"],
-	"headlights": ["L", "RB"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
+	"headlights": ["L", "RB"], "signal_left": ["Z", "D-pad left"], "signal_right": ["X", "D-pad left"],
+	"hazards": ["B", "the dash"], "wipers": ["V", "the dash"], "radio_next": ["N", "the dash"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
 	"handbrake": ["Space", "A"], "sprint": ["Shift", "L3"], "jump": ["Space", "A"],
 	"gas": ["W", "RT"], "brake": ["S", "LT"], "move": ["WASD", "the left stick"],
 	"look": ["the mouse", "the right stick"], "graphics": ["F3", "the pause menu"],
@@ -877,6 +887,8 @@ var volume := 0.8           # master volume 0..1
 var mouse_sens := 1.0       # multiplier
 var pad_sens := 1.0         # right-stick look speed multiplier
 var mirror_mode := 0        # 0 = mirrors in the car, 1 = car + screen overlays, 2 = off
+var radio_station := 1      # Radio.STATIONS index
+var radio_on := true
 
 
 func load_options() -> void:
@@ -886,6 +898,8 @@ func load_options() -> void:
 		mouse_sens = float(cfg.get_value("options", "mouse_sens", mouse_sens))
 		pad_sens = float(cfg.get_value("options", "pad_sens", pad_sens))
 		mirror_mode = int(cfg.get_value("options", "mirror_mode", mirror_mode))
+		radio_station = int(cfg.get_value("options", "radio_station", radio_station))
+		radio_on = bool(cfg.get_value("options", "radio_on", radio_on))
 	apply_volume()
 
 
@@ -896,6 +910,8 @@ func save_options() -> void:
 	cfg.set_value("options", "mouse_sens", mouse_sens)
 	cfg.set_value("options", "pad_sens", pad_sens)
 	cfg.set_value("options", "mirror_mode", mirror_mode)
+	cfg.set_value("options", "radio_station", radio_station)
+	cfg.set_value("options", "radio_on", radio_on)
 	cfg.save(SETTINGS_PATH)
 
 

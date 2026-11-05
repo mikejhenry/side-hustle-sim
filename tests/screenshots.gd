@@ -31,6 +31,10 @@ func _ready() -> void:
 	if "--no-shadows" in args:
 		main.sun.shadow_enabled = false
 	Game.minute = 10 * 60.0
+	if "--driving" in args:
+		await _driving_shots()
+		get_tree().quit()
+		return
 	main.start_tutorial()
 	await shot("01_walking")
 	main.tutorial.finish(true)
@@ -215,3 +219,57 @@ func _ready() -> void:
 	main.enter_car()
 	await shot("07_night_drive")
 	get_tree().quit()
+
+
+## Dashboard, GPS mount, radio, signals, wipers and rain (run with -- <dir> --driving).
+func _driving_shots() -> void:
+	var car: Car = main.car
+	main.enter_car()
+	var far: Dictionary = main.town.restaurants[0]
+	main.set_waypoint(far.door, far.name)
+	car.radio.set_station(1)
+	await frames(40)
+	car.radio._next_segment = 0.0
+	car.dash.set_signal("left")
+	await frames(10)
+	await shot("26_dashboard_gps_radio")
+	# Looking down at the console, aiming at the next-station button.
+	for it in car.dash._controls:
+		if it.get_prompt().begins_with("Radio: next"):
+			var local: Vector3 = (car.to_local(it.global_position) - car.fp_camera.position).normalized()
+			car._look_yaw = atan2(local.x, local.z)
+			car._look_pitch = asin(local.y)
+	await shot("27_dashboard_buttons")
+	car._look_yaw = 0.0
+	car._look_pitch = -0.08
+	# Rain on the windshield, wipers mid-sweep.
+	Game.weather_override = "storm"
+	Game._update_weather()
+	Game.weather_amount = 1.0
+	await frames(200)
+	await shot("28_rain_windshield")
+	car.dash.cycle_wipers()
+	await frames(80)
+	car.dash.set_process(false)
+	car.dash.wiper_phase = 0.45
+	await shot("29_wipers")
+	car.dash.set_process(true)
+	Game.weather_override = "clear"
+	Game._update_weather()
+	car.dash.wiper_mode = 0
+	main.hud.windshield.drops.clear()
+	# Blinkers from outside.
+	car.toggle_camera()
+	car.dash.toggle_hazards()
+	car.dash.blink_on = true
+	car.dash._refresh_lamps()
+	car.dash.set_physics_process(false)
+	car.dash.set_process(false)
+	await shot("30_hazards_chase")
+	car.dash.set_process(true)
+	car.dash.toggle_hazards()
+	car.toggle_camera()
+	Game.car_id = "civil"
+	Game.car_changed.emit()
+	await frames(10)
+	await shot("31_built_car_dashboard")
