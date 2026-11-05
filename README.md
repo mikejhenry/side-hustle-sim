@@ -141,6 +141,19 @@ slippery (snow is worst), and snow whitens the grass. Bad weather pays: food del
 the biggest boost (+30% rain, +45% storm, +50% snow), groceries and rides a bit less, Jungle Flex
 only a few percent. The clock line on the HUD shows the current weather.
 
+**Day and night.** The sun rises at 6 AM and sets at 6 PM, with an orange glow on the horizon
+at dawn and dusk. When it gets dark the streetlights come on, shop windows, houses and apartments
+light up, every car in traffic turns on its headlights and taillights, and your own headlights
+switch on by themselves (L still toggles them).
+
+**Rush hour and late nights.** On weekdays the roads fill up from 7 to 9 AM and 4 to 6 PM, and
+nearly empty out in the small hours (weekends are calmer). From 10 PM to 4 AM, Yoober and Drift
+pay a +30% late-night surge (purple bars on the app's peak chart), but about half the riders are
+rowdy: they shout and sing along the way, and the ride might end in a big tip, a spilled drink
+(the app pays a cleaning fee, but cleaning takes you 15 minutes), a grumpy rating, or a nap.
+
+![Dusk](docs/screenshots/26_dusk.png)
+
 **People with routines.** Thirty townsfolk each have a home, a role (student, office worker,
 shopper, warehouse worker) and a daily plan: leave home in the morning, walk to class or work,
 go out for lunch, run errands, stroll, head home in the evening. The streets fill up at lunch
@@ -148,9 +161,9 @@ and the evening rush and empty out at night, apart from a few night owls downtow
 at the crosswalks (waiting for the walk light, or a gap in traffic), cars stop for them, and
 they go inside the places they visit.
 
-**Traffic follows the clock.** Thin overnight, heavy at the 7-9 AM and 4-7 PM rush, when most
-drivers head downtown and it slows to a crawl. Drivers stuck behind you (double-parked on a
-delivery, say) lean on the horn after a couple of seconds, and long jams get honky too.
+**Jams and honking.** At rush hour most drivers head downtown and it slows to a crawl. Drivers
+stuck behind you (double-parked on a delivery, say) lean on the horn after a couple of seconds,
+and long jams get honky too.
 
 **Road work.** Every day a couple of cross-street blocks close for construction: barricades with
 flashing lamps, ROAD CLOSED / DETOUR signs, cones, an excavator and a crew. The GPS, traffic and
@@ -160,8 +173,8 @@ police route around them, the minimap marks them, and the day's closures pop up 
 delivery door). Pigeons peck around the park, campus and downtown sidewalks and burst into the
 air when you walk up or drive past fast, then circle and land again. Gulls glide over the port.
 
-![Road work](docs/screenshots/26_road_work.png)
-![Lunchtime downtown](docs/screenshots/27_lunch_downtown.png)
+![Road work](docs/screenshots/28_road_work.png)
+![Lunchtime downtown](docs/screenshots/29_lunch_downtown.png)
 
 **Settings** (pause menu): volume, mouse sensitivity, gamepad look speed, mirrors. Saved between runs.
 

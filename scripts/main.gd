@@ -265,7 +265,7 @@ func enter_car() -> void:
 	Game.in_car = true
 	player.set_active(false)
 	car.set_driver(true)
-	car.set_headlights(Game.is_night())
+	car.set_headlights(Game.lights_on())
 
 
 func exit_car() -> void:
@@ -363,41 +363,55 @@ func _update_gps(delta: float, t: Dictionary) -> void:
 func _update_sky() -> void:
 	var m := Game.minute
 	var e := (m / 1440.0 - 0.25) * TAU   # sun elevation angle: 6AM = 0, noon = PI/2
-	var day_amount := clampf(sin(e) * 2.5 + 0.3, 0.0, 1.0)
+	var day_amount := Game.daylight()
+	# Dawn and dusk: an orange-pink glow on the horizon while the sun is near it.
+	var twilight := clampf(1.0 - absf(sin(e)) * 3.5, 0.0, 1.0)
 	if sin(e) > -0.1:
 		sun.rotation = Vector3(-clampf(e, 0.05, PI - 0.05), deg_to_rad(-35.0), 0)
 		sun.light_energy = 0.85 * day_amount
-		sun.light_color = Color(1.0, 0.75, 0.55).lerp(Color(1.0, 0.97, 0.92), clampf(sin(e) * 2.0, 0.0, 1.0))
+		sun.light_color = Color(1.0, 0.62, 0.4).lerp(Color(1.0, 0.97, 0.92), clampf(sin(e) * 2.0, 0.0, 1.0))
 	else:
 		sun.rotation = Vector3(-0.9, deg_to_rad(30.0), 0)   # moonlight
-		sun.light_energy = 0.06
+		sun.light_energy = 0.07
 		sun.light_color = Color(0.6, 0.7, 1.0)
-	env.background_color = Color(0.03, 0.03, 0.07).lerp(Color(0.55, 0.68, 0.85), day_amount)
+	var dusk := Color(0.95, 0.5, 0.32)
+	env.background_color = Color(0.03, 0.03, 0.07).lerp(Color(0.55, 0.68, 0.85), day_amount).lerp(dusk * 0.7, twilight * 0.35)
+	var ambient := Color(0.22, 0.26, 0.42).lerp(Color(0.62, 0.66, 0.72), day_amount).lerp(Color(0.7, 0.5, 0.45), twilight * 0.25)
 	if low_graphics:
-		env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
+		env.ambient_light_color = ambient
 		env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
 		if weather_fx:
 			weather_fx.apply_sky(sun, env, null)
 		_update_night()
 		return
-	sky_mat.sky_top_color = Color(0.01, 0.01, 0.04).lerp(Color(0.3, 0.5, 0.85), day_amount)
-	sky_mat.sky_horizon_color = Color(0.04, 0.04, 0.08).lerp(Color(0.75, 0.82, 0.9), day_amount)
+	sky_mat.sky_top_color = Color(0.01, 0.01, 0.04).lerp(Color(0.3, 0.5, 0.85), day_amount).lerp(Color(0.25, 0.2, 0.4), twilight * 0.3)
+	sky_mat.sky_horizon_color = Color(0.04, 0.04, 0.08).lerp(Color(0.75, 0.82, 0.9), day_amount).lerp(dusk, twilight * 0.65)
 	sky_mat.ground_horizon_color = sky_mat.sky_horizon_color
 	sky_mat.ground_bottom_color = Color(0.05, 0.05, 0.06).lerp(Color(0.3, 0.3, 0.3), day_amount)
-	env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
+	env.ambient_light_color = ambient
 	env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
 	if weather_fx:
 		weather_fx.apply_sky(sun, env, sky_mat)
 	_update_night()
 
 
+var _glow := -1.0
+
+
 func _update_night() -> void:
-	var night := Game.is_night()
+	# Windows fade in through dusk (and out at dawn) instead of snapping on.
+	var glow := snappedf(clampf((0.6 - Game.daylight()) / 0.5, 0.0, 1.0), 0.02)
+	if glow != _glow:
+		_glow = glow
+		Kit.set_window_glow(glow)
+	var night := Game.lights_on()
 	if night != _was_night:
 		_was_night = night
 		town.set_night(night)
-		if driving:
+		traffic.set_night(night)
+		if driving and car.headlights_on != night:
 			car.set_headlights(night)
+			hud.toast("Headlights %s (%s to toggle)." % ["on" if night else "off", Game.key("headlights")], "info")
 
 
 # --- Input ---------------------------------------------------------------------------

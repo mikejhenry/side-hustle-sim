@@ -29,6 +29,7 @@ var mechanic_bay: Transform3D
 var spawn_point := Vector3.ZERO
 var car_spawn := Transform3D.IDENTITY
 var _street_lights: Array = []
+var _win_rng := RandomNumberGenerator.new()   # which windows are lit (kept apart from _rng so the layout stays the same)
 var _rng := RandomNumberGenerator.new()
 
 const HOUSE_COLORS := [Color(0.85, 0.82, 0.72), Color(0.62, 0.72, 0.8), Color(0.8, 0.66, 0.55),
@@ -38,6 +39,7 @@ const ROOF_COLORS := [Color(0.3, 0.25, 0.22), Color(0.25, 0.28, 0.33), Color(0.4
 
 func build() -> void:
 	_rng.seed = 302   # same town every time
+	_win_rng.seed = 77
 	_ground_and_roads()
 	_blocks()
 	StripDistrict.new().build(self)
@@ -353,7 +355,9 @@ func _house(lot: Node3D, addr_name: String) -> void:
 		Kit.cylinder(hb, 0.08, 2.5, Vector3(sx, 0.5 + 1.35, fz + 1.9), trim, false)
 	for sx in [-1.0, 1.0]:
 		var wx: float = sx * w * 0.3
-		Kit.box(hb, Vector3(1.5, 1.3, 0.06), Vector3(wx, 0.5 + 1.75, fz + 0.03), Kit.glass(), false)
+		# Most houses have someone home with a lamp on after dark.
+		var win := Kit.lit_glass("home") if _win_rng.randf() < 0.7 else Kit.glass()
+		Kit.box(hb, Vector3(1.5, 1.3, 0.06), Vector3(wx, 0.5 + 1.75, fz + 0.03), win, false)
 		Kit.box(hb, Vector3(1.7, 0.12, 0.12), Vector3(wx, 0.5 + 2.45, fz + 0.06), trim, false)
 		Kit.box(hb, Vector3(1.8, 0.1, 0.22), Vector3(wx, 0.5 + 1.05, fz + 0.1), trim, false)
 		Kit.box(hb, Vector3(0.06, 1.3, 0.08), Vector3(wx, 0.5 + 1.75, fz + 0.07), trim, false)
@@ -404,9 +408,9 @@ func _apartments(lot: Node3D, apt_name: String, floors: int, number: int, street
 				continue
 			panes.append(Transform3D(Basis.IDENTITY, Vector3(x, 1.7 + f * 3.2, d / 2.0 + 0.03)))
 			sills.append(Transform3D(Basis.IDENTITY, Vector3(x, 1.0 + f * 3.2, d / 2.0 + 0.08)))
-	Kit.multibox(b, Vector3(1.6, 1.5, 0.06), panes, Kit.glass())
+	Kit.lit_panes(b, Vector3(1.6, 1.5, 0.06), panes, _win_rng)
 	Kit.multibox(b, Vector3(1.9, 0.12, 0.2), sills, Color(0.88, 0.86, 0.82))
-	Kit.box(b, Vector3(2.4, 2.6, 0.15), Vector3(0, 1.3, d / 2.0 + 0.08), Kit.glass(), false)
+	Kit.box(b, Vector3(2.4, 2.6, 0.15), Vector3(0, 1.3, d / 2.0 + 0.08), Kit.lit_glass("shop"), false)
 	Kit.box(b, Vector3(4.0, 0.25, 2.0), Vector3(0, 3.0, d / 2.0 + 1.0), Color(0.15, 0.25, 0.35), false)
 	Kit.box(b, Vector3(w + 0.4, 0.6, d + 0.4), Vector3(0, h + 0.3, 0), Kit.surf("concrete", Color(0.7, 0.7, 0.7)))
 	Kit.box(b, Vector3(w - 1.0, 0.1, d - 1.0), Vector3(0, h + 0.62, 0), Kit.surf("gravel"), false)

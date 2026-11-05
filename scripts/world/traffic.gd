@@ -9,16 +9,17 @@ extends Node3D
 ## front of one starts a chase: it follows the GPS route to you, lights flashing, until you
 ## stop (ticket) or get far enough away for long enough (escaped).
 ##
-## How busy the streets are follows the clock: thin overnight, heavy at the morning and
-## evening rush, when more cars head downtown and queue at the lights. Drivers stuck
-## behind you (or in a long jam) lean on the horn. Roads closed for construction are
-## left out of everyone's turns.
+## At rush hour most drivers head downtown, where traffic slows to a crawl. Drivers stuck
+## behind you (or in a long jam) lean on the horn. Roads closed for construction are left
+## out of everyone's turns, and everyone stops for people in the crosswalk.
 
 signal chase_started(reason: String)
 signal chase_ended(result: String)
 
-const COUNT := 14            # civilian cars at a normal daytime hour
-const MAX_COUNT := 42        # at the peak of rush hour
+const COUNT := 14            # civilian cars at a normal hour (scaled by Game.traffic_level())
+const MAX_COUNT := 26        # civilian cars at the peak of rush hour
+const MIN_COUNT := 4         # the small hours
+const HIDE_RANGE := 75.0     # cars only appear and vanish this far from you
 const COP_COUNT := 3
 const SIGHT_RANGE := 55.0     # meters a cop can see
 const SIGHT_COS := 0.3        # field of view: about 145 degrees wide
@@ -48,176 +49,40 @@ var _stopped_time := 0.0
 var _lost_time := 0.0
 var _grace := 0.0              # after a ticket, cops leave you alone for a bit
 var _rng := RandomNumberGenerator.new()
-var auto_density := true       # tests turn this off to keep the same cars around
-var honks := 0                 # how many times traffic has honked (for tests)
-var _pool: Array = []          # parked-off civilian cars, waiting for traffic to pick up
+var reserve: Array = []        # spare civilian cars, parked out of sight until the roads get busy
+var auto_density := true       # follow rush hour / late night (tests turn it off)
+var night := false
 var _density_t := 0.0
+var honks := 0                 # how many times traffic has honked (for tests)
 var _last_honk := -10.0
-var _rush_note := -1
 
 
 func build() -> void:
 	_rng.seed = 911
 	var avoid: Vector3 = main.actor_position() if main else Vector3.ZERO
-	for i in MAX_COUNT:
+	var tries := 0
+	while cars.size() < MAX_COUNT and tries < 600:
+		tries += 1
+		var node := Vector2i(_rng.randi_range(0, town.N), _rng.randi_range(0, town.N))
+		var dirs := _exits(node, Vector2i.ZERO)
+		var d: Vector2i = dirs[_rng.randi() % dirs.size()]
 		var car := AICar.new()
 		car.traffic = self
 		car.horn_pitch = _rng.randf_range(0.8, 1.25)
 		add_child(car)
-		car.setup(_random_data(), Vector2i(0, 0), Vector2i(1, 0), 0.5)
-		_park(car)
+		car.setup(_random_data(), node, d, _rng.randf_range(0.1, 0.8))
+		if car.global_position.distance_to(avoid) < 30.0 or _too_close(car):
+			cars.erase(car)
+			car.queue_free()
+			continue
+		cars.append(car)
+	# Start with as many as this hour calls for; the rest wait in reserve.
 	var want := target_count()
-	var tries := 0
-	while civilians() < want and tries < 400:
-		tries += 1
-		_activate(avoid, 30.0)
+	while cars.size() > want:
+		_park(cars.pop_back())
 	_spawn_cops(avoid)
 	if main and main.car:
 		main.car.crashed.connect(_on_player_crash)
-
-
-## How many civilian cars should be out at this hour.
-func target_count(h := -1) -> int:
-	if h < 0:
-		h = Game.hour()
-	if h < 5:
-		return 7
-	if h < 6:
-		return 10
-	if h < 7:
-		return 16
-	if h < 10:
-		return MAX_COUNT if h < 9 else 22
-	if h < 16:
-		return COUNT
-	if h < 19:
-		return MAX_COUNT
-	if h < 22:
-		return 16
-	return 10
-
-
-## Downtown, where the rush-hour jams are.
-func downtown(p: Vector3) -> bool:
-	var B: float = town.B
-	return p.x > 0.8 * B and p.x < 4.2 * B and p.z > 1.8 * B and p.z < 4.2 * B
-
-
-## Share of normal cruising speed here: downtown crawls at rush hour.
-func speed_factor(p: Vector3) -> float:
-	return 0.55 if rush_hour() and downtown(p) else 1.0
-
-
-func rush_hour(h := -1) -> bool:
-	if h < 0:
-		h = Game.hour()
-	return (h >= 7 and h < 9) or (h >= 16 and h < 19)
-
-
-func civilians() -> int:
-	return cars.size() - cops.size()
-
-
-## Takes a car out of traffic (hidden, not moving) until it's needed again.
-func _park(car: AICar) -> void:
-	cars.erase(car)
-	if not car in _pool:
-		_pool.append(car)
-	car.visible = false
-	car.process_mode = Node.PROCESS_MODE_DISABLED
-	car.global_position = Vector3(0, -50, 0)
-	car.speed = 0.0
-
-
-## Puts a pooled car on a random street at least `avoid_r` from `avoid`. At rush hour
-## most new cars start downtown, where the jams are.
-func _activate(avoid: Vector3, avoid_r: float) -> bool:
-	if _pool.is_empty():
-		return false
-	var car: AICar = _pool[0]
-	var node: Vector2i
-	if rush_hour() and _rng.randf() < 0.8:
-		node = Vector2i(_rng.randi_range(1, 4), _rng.randi_range(2, 4))
-	else:
-		node = Vector2i(_rng.randi_range(0, town.N), _rng.randi_range(0, town.N))
-	var dirs := _exits(node, Vector2i.ZERO)
-	if dirs.is_empty():
-		return false
-	var d: Vector2i = dirs[_rng.randi() % dirs.size()]
-	car.place(node, d, _rng.randf_range(0.1, 0.8))
-	if car.global_position.distance_to(avoid) < avoid_r or _too_close(car):
-		car.global_position = Vector3(0, -50, 0)
-		return false
-	_pool.erase(car)
-	car.visible = true
-	car.process_mode = Node.PROCESS_MODE_INHERIT
-	cars.append(car)
-	return true
-
-
-## Adds or removes one car (out of your sight) to move toward the hour's target.
-## force: jump straight to the target (tests, and after sleeping).
-func rebalance(force := false) -> void:
-	var want := target_count()
-	var avoid: Vector3 = main.actor_position() if main else Vector3.ZERO
-	var tries := 0
-	while tries < (200 if force else 6):
-		tries += 1
-		if civilians() < want:
-			if _activate(avoid, 30.0 if force else 140.0) and not force:
-				return
-		elif civilians() > want:
-			var far := cars.filter(func(c): return not c.is_cop and c.global_position.distance_to(avoid) > (0.0 if force else 140.0))
-			if far.is_empty():
-				return
-			_park(far[_rng.randi() % far.size()])
-			if not force:
-				return
-		else:
-			# At rush hour, cars that wandered out of town (out of your sight) come back downtown.
-			if not force and rush_hour() and cars.filter(func(c): return downtown(c.global_position)).size() < civilians() * 0.6:
-				var out := cars.filter(func(c): return not c.is_cop and not downtown(c.global_position) and c.global_position.distance_to(avoid) > 140.0)
-				if not out.is_empty():
-					_park(out[_rng.randi() % out.size()])
-					_activate(avoid, 140.0)
-			return
-
-
-## Cars on a road that just closed for construction leave traffic.
-func clear_segment(a: Vector2i, b: Vector2i) -> void:
-	for c in cars.duplicate():
-		if c.is_cop:
-			continue
-		var on: bool = (c._node_from == a and c._node_from + c._dir == b) or (c._node_from == b and c._node_from + c._dir == a)
-		if on:
-			_park(c)
-
-
-func _process(delta: float) -> void:
-	if not auto_density or main == null:
-		return
-	_density_t -= delta
-	if _density_t <= 0.0:
-		_density_t = 2.0
-		rebalance()
-	var h := Game.hour()
-	if h != _rush_note:
-		_rush_note = h
-		if h == 7 or h == 16:
-			Game.notify("Rush hour: traffic is heavy downtown. The beltway might be quicker.", "info")
-
-
-## Plays a honk from `car` if nobody else just honked (so jams don't turn into noise).
-func try_honk(car: AICar, double := false) -> bool:
-	var now := Time.get_ticks_msec() / 1000.0
-	if now - _last_honk < 1.4:
-		return false
-	if main and car.global_position.distance_to(main.actor_position()) > 110.0:
-		return false
-	_last_honk = now
-	honks += 1
-	car.honk(double)
-	return true
 
 
 func _spawn_cops(avoid: Vector3) -> void:
@@ -240,6 +105,131 @@ func _spawn_cops(avoid: Vector3) -> void:
 			continue
 		cars.append(car)
 		cops.append(car)
+
+
+## How many civilian cars should be on the road right now.
+func target_count() -> int:
+	return clampi(roundi(COUNT * Game.traffic_level()), MIN_COUNT, MAX_COUNT)
+
+
+func civilians() -> int:
+	return cars.size() - cops.size()
+
+
+## Every couple of seconds, bring a spare car onto the road (out of sight) or take one off,
+## so the streets fill up for rush hour and empty out late at night.
+func _update_density(delta: float) -> void:
+	_density_t -= delta
+	if _density_t > 0.0 or not auto_density or main == null:
+		return
+	_density_t = 2.0
+	var want := target_count()
+	var me: Vector3 = main.actor_position()
+	if civilians() < want and not reserve.is_empty():
+		for i in 8:
+			var node := Vector2i(_rng.randi_range(0, town.N), _rng.randi_range(0, town.N))
+			if node_pos(node).distance_to(me) < HIDE_RANGE + 20.0:
+				continue
+			if rush_hour() and _rng.randf() < 0.8:
+				node = Vector2i(_rng.randi_range(1, 4), _rng.randi_range(2, 4))
+				if node_pos(node).distance_to(me) < HIDE_RANGE + 20.0:
+					continue
+			var dirs := _exits(node, Vector2i.ZERO)
+			if dirs.is_empty():
+				continue
+			var car: AICar = reserve.pop_back()
+			car.place(node, dirs[_rng.randi() % dirs.size()], _rng.randf_range(0.1, 0.8))
+			if _too_close(car):
+				reserve.append(car)
+				continue
+			_unpark(car)
+			break
+	elif civilians() > want:
+		for c in cars:
+			if not c.is_cop and c.global_position.distance_to(me) > HIDE_RANGE:
+				cars.erase(c)
+				_park(c)
+				break
+	elif rush_hour() and cars.filter(func(c): return downtown(c.global_position)).size() < civilians() * 0.6:
+		# Cars that wandered out of town (out of your sight) come back downtown for the jam.
+		for c in cars:
+			if not c.is_cop and not downtown(c.global_position) and c.global_position.distance_to(me) > HIDE_RANGE:
+				cars.erase(c)
+				_park(c)
+				_density_t = 0.0
+				break
+
+
+## Jumps straight to this hour's traffic (tests, and after a big time skip).
+func rebalance() -> void:
+	var saved := auto_density
+	auto_density = true
+	for i in 120:
+		if civilians() == target_count():
+			break
+		_density_t = 0.0
+		_update_density(0.1)
+	auto_density = saved
+
+
+## Downtown, where the rush-hour jams are.
+func downtown(p: Vector3) -> bool:
+	var B: float = town.B
+	return p.x > 0.8 * B and p.x < 4.2 * B and p.z > 1.8 * B and p.z < 4.2 * B
+
+
+## Share of normal cruising speed here: downtown crawls at rush hour.
+func speed_factor(p: Vector3) -> float:
+	return 0.55 if rush_hour() and downtown(p) else 1.0
+
+
+func rush_hour() -> bool:
+	return Game.is_rush_hour()
+
+
+## Cars on a road that just closed for construction leave traffic.
+func clear_segment(a: Vector2i, b: Vector2i) -> void:
+	for c in cars.duplicate():
+		if c.is_cop:
+			continue
+		var on: bool = (c._node_from == a and c._node_from + c._dir == b) or (c._node_from == b and c._node_from + c._dir == a)
+		if on:
+			cars.erase(c)
+			_park(c)
+
+
+## Plays a honk from `car` if nobody else just honked (so jams don't turn into noise).
+func try_honk(car: AICar, double := false) -> bool:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_honk < 1.4:
+		return false
+	if main and car.global_position.distance_to(main.actor_position()) > 110.0:
+		return false
+	_last_honk = now
+	honks += 1
+	car.honk(double)
+	return true
+
+
+func _park(car: AICar) -> void:
+	car.visible = false
+	car.process_mode = Node.PROCESS_MODE_DISABLED
+	car.global_position = Vector3(0, -200, 0)
+	reserve.append(car)
+
+
+func _unpark(car: AICar) -> void:
+	reserve.erase(car)
+	car.visible = true
+	car.process_mode = Node.PROCESS_MODE_INHERIT
+	cars.append(car)
+
+
+## Headlights and taillights on every AI car after dark.
+func set_night(on: bool) -> void:
+	night = on
+	for c in cars + reserve:
+		c.set_lights(on)
 
 
 func _too_close(car: Node3D) -> bool:
@@ -300,8 +290,7 @@ func link_from(n: Vector2i, d: Vector2i) -> Dictionary:
 	return _links.get([n, d], {})
 
 
-## Directions you can leave an intersection by, never straight back the way you came,
-## and never into a road closed for construction.
+## Directions you can leave an intersection by, never straight back the way you came.
 func _exits(n: Vector2i, came: Vector2i) -> Array:
 	var out := []
 	var works: Node = main.get("construction") if main else null
@@ -383,6 +372,7 @@ func cop_sees(cop: Node3D, target: Vector3, ignore: Array) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	_update_density(delta)
 	if main == null or not police_enabled:
 		return
 	_grace = maxf(0.0, _grace - delta)
@@ -525,6 +515,7 @@ class AICar:
 	var _flash: OmniLight3D
 	var _flash_t := 0.0
 	var _siren: AudioStreamPlayer3D
+	var _night: Node3D        # head/tail lights, shown after dark
 	# Horn
 	var horn_pitch := 1.0
 	var blocker := ""         # what we're braking for: player, car, ped (or "")
@@ -552,18 +543,19 @@ class AICar:
 			if c.get_child_count() > 0 and c.get_child(0) is MeshInstance3D and (c.get_child(0) as MeshInstance3D).mesh is CylinderMesh:
 				_wheels.append(c)
 		place(node, d, start_frac)
+		_build_lights(model)
 		if is_cop:
 			_build_police_gear(model)
 
-	## Puts the car `start_frac` of the way down the road leaving `node` in direction `d`.
+	## Put the car in the right-hand lane leaving intersection `node` heading `d`.
 	func place(node: Vector2i, d: Vector2i, start_frac: float) -> void:
 		_legs.clear()
+		speed = 0.0
+		waited = 0.0
 		_node_from = node
 		_dir = d
 		_queue_straight()
 		_s = _legs[0][3] * start_frac
-		speed = 0.0
-		waited = 0.0
 		_honk_t = 0.0
 		_honked = 0
 		_apply_pose()
@@ -597,6 +589,57 @@ class AICar:
 		if _honk_t > limit and traffic.try_honk(self, _honked > 0 or randf() < 0.3):
 			_honk_t = 0.0
 			_honked += 1
+
+	static var _head_mat: StandardMaterial3D
+	static var _tail_mat: StandardMaterial3D
+
+	## Glowing head and tail lamps at the corners of whatever model this is, plus one
+	## shadowless headlight beam that fades out with distance (so lots of cars stay cheap).
+	func _build_lights(model: Node3D) -> void:
+		if _head_mat == null:
+			_head_mat = Kit.mat(Color(1.0, 0.97, 0.85), 4.0)
+			_tail_mat = Kit.mat(Color(1.0, 0.08, 0.05), 3.0)
+		var inv := global_transform.affine_inverse()
+		var box := AABB()
+		var first := true
+		for mi in model.find_children("*", "MeshInstance3D", true, false):
+			var b: AABB = inv * (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+			if b.size.y > 3.0:
+				continue
+			box = b if first else box.merge(b)
+			first = false
+		if first:
+			box = AABB(Vector3(-0.9, 0, -2.2), Vector3(1.8, 1.4, 4.4))
+		_night = Node3D.new()
+		_night.visible = traffic.night
+		add_child(_night)
+		var y := box.position.y + box.size.y * 0.4
+		var hx := box.size.x / 2.0 - 0.35
+		var cx := box.get_center().x
+		for sx in [-1.0, 1.0]:
+			for front in [true, false]:
+				var lamp := MeshInstance3D.new()
+				var bm := BoxMesh.new()
+				bm.size = Vector3(0.36, 0.14, 0.05)
+				lamp.mesh = bm
+				lamp.material_override = _head_mat if front else _tail_mat
+				lamp.position = Vector3(cx + sx * hx, y, box.end.z + 0.02 if front else box.position.z - 0.02)
+				_night.add_child(lamp)
+		var beam := SpotLight3D.new()
+		beam.position = Vector3(cx, y, box.end.z + 0.1)
+		beam.rotation = Vector3(-0.1, PI, 0)
+		beam.spot_range = 26.0
+		beam.spot_angle = 34.0
+		beam.light_energy = 2.0
+		beam.light_color = Color(1.0, 0.95, 0.85)
+		beam.distance_fade_enabled = true
+		beam.distance_fade_begin = 55.0
+		beam.distance_fade_length = 15.0
+		_night.add_child(beam)
+
+	func set_lights(on: bool) -> void:
+		if _night:
+			_night.visible = on
 
 
 	func _build_police_gear(model: Node3D) -> void:
