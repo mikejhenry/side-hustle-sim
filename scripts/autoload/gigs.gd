@@ -180,8 +180,12 @@ func _make_offer(id: String) -> void:
 			o.passenger = GameData.FIRST_NAMES.pick_random()
 			o.miles = trip
 			o.pickup_miles = _miles(me, p.curb)
-			o.pay = (a.base + a.per_mile * trip) * s * wb * Game.car().comfort
+			# Late at night (bars closing) rides pay a surge on top, but riders can get rowdy.
+			var ln := GameData.LATE_NIGHT_SURGE if Game.is_late_night() else 1.0
+			o.pay = (a.base + a.per_mile * trip) * s * wb * ln * Game.car().comfort
 			o.weather_pay = (a.base + a.per_mile * trip) * s * (wb - 1.0) * Game.car().comfort
+			o.night_pay = snappedf((a.base + a.per_mile * trip) * s * wb * (ln - 1.0) * Game.car().comfort, 0.01)
+			o.rowdy = ln > 1.0 and randf() < GameData.ROWDY_CHANCE
 			o.tip = 0.0
 			o.deadline = now + 25.0 + (o.pickup_miles + trip) * 8.0
 		"food":
@@ -402,7 +406,11 @@ func start_trip() -> void:
 		return
 	job.stage = "to_dropoff"
 	job.crashes = 0
-	Game.notify("%s hopped in. \"Hey! Can you turn the music up?\"" % job.passenger, "info")
+	if job.get("rowdy", false):
+		job.next_outburst = Game.total_minutes() + randf_range(3.0, 6.0)
+		Game.notify("%s stumbles in, a little too happy. %s" % [job.passenger, GameData.ROWDY_LINES.pick_random()], "warn")
+	else:
+		Game.notify("%s hopped in. \"Hey! Can you turn the music up?\"" % job.passenger, "info")
 	job_changed.emit()
 
 
@@ -419,11 +427,37 @@ func end_trip() -> void:
 		stars -= 0.5
 	if Game.total_minutes() > job.deadline:
 		stars -= 1.0
-	stars = clampf(stars, 1.0, 5.0)
 	var tip := 0.0
+	var note := ""
+	var clean := 0.0
+	if job.get("rowdy", false):
+		var r := rowdy_outcome()
+		clean = r.get("clean_minutes", 0.0)
+		stars += r.stars
+		tip += r.tip
+		note = " " + r.text
+	stars = clampf(stars, 1.0, 5.0)
 	if stars >= 4.5 and randf() < 0.45:
-		tip = float(randi_range(1, 6))
-	_complete(stars, tip, "%s rated you %d stars." % [job.passenger, int(stars)])
+		tip += float(randi_range(1, 6))
+	_complete(stars, tip, "%s rated you %d stars.%s" % [job.passenger, int(stars), note])
+	if clean > 0.0:
+		Game.advance(clean)
+
+
+## How a rowdy late-night ride ends: a big drunk tip, a mess (the app pays a cleaning fee,
+## but cleaning it takes you a while), a grumpy low rating, or nothing at all.
+func rowdy_outcome(roll := -1.0) -> Dictionary:
+	if roll < 0.0:
+		roll = randf()
+	if roll < 0.35:
+		var t := float(randi_range(8, 20))
+		return {"stars": 0.0, "tip": t, "text": "\"You're the BEST. Keep the change!\" (+$%.0f tip)" % t}
+	if roll < 0.6:
+		return {"stars": 0.0, "tip": GameData.CLEANING_FEE, "clean_minutes": 15.0,
+			"text": "They spilled a drink on the back seat. Cleaning fee +$%.0f, and 15 minutes with paper towels." % GameData.CLEANING_FEE}
+	if roll < 0.8:
+		return {"stars": -1.0, "tip": 0.0, "text": "They're mad you wouldn't stop for tacos."}
+	return {"stars": 0.0, "tip": 0.0, "text": "They fell asleep, so it was a quiet ride after all."}
 
 
 func pick_up_food() -> void:
@@ -561,6 +595,9 @@ func _rate(id: String, stars: float) -> void:
 
 
 func _check_job_time(now: float) -> void:
+	if job.get("rowdy", false) and job.stage == "to_dropoff" and now >= job.get("next_outburst", INF):
+		job.next_outburst = now + randf_range(4.0, 8.0)
+		Game.notify("%s: %s" % [job.passenger, GameData.ROWDY_LINES.pick_random()], "warn")
 	if job.kind == "flex":
 		if job.stage == "to_station" and now > job.start + 30.0:
 			_rate("jungleflex", 2.0)

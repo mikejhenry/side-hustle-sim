@@ -131,6 +131,43 @@ func is_night() -> bool:
 	return hour() < 6 or hour() >= 20
 
 
+## How much daylight there is (0 = night, 1 = full day). The sun rises at 6 AM and sets at
+## 6 PM; dawn and dusk each take about half an hour.
+func daylight(m: float = -1.0) -> float:
+	if m < 0.0:
+		m = minute
+	var e := (fmod(m, 1440.0) / 1440.0 - 0.25) * TAU
+	return clampf(sin(e) * 2.5 + 0.3, 0.0, 1.0)
+
+
+## Streetlights, lit windows and automatic headlights come on at dusk and go off after dawn.
+func lights_on() -> bool:
+	return daylight() < 0.45
+
+
+## Bars-closing hours (10 PM to 4 AM): ride apps pay a late-night surge and riders get rowdy.
+func is_late_night(h := -1) -> bool:
+	if h < 0:
+		h = hour()
+	return h >= GameData.LATE_NIGHT_START or h < GameData.LATE_NIGHT_END
+
+
+## How busy the roads are this hour (1.0 = normal). Morning and evening rush hours on
+## weekdays are the busiest; the small hours are nearly empty.
+func traffic_level(h := -1) -> float:
+	if h < 0:
+		h = hour()
+	var weekend := weekday() in ["Sat", "Sun"]
+	var lvl: float = GameData.TRAFFIC_BY_HOUR[h]
+	if weekend and lvl > 1.0:
+		lvl = 1.0 + (lvl - 1.0) * 0.3   # no commute on weekends
+	return lvl
+
+
+func is_rush_hour(h := -1) -> bool:
+	return traffic_level(h) >= 1.5
+
+
 func advance(mins: float, is_sleeping := false, quality := 1.0) -> void:
 	var remaining := mins
 	while remaining > 0.0:

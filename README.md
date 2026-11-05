@@ -121,9 +121,12 @@ ticket as a bill due in a week.
 your minimap (blue COP badges, flashing red when they're after you) and the speed and red light
 cameras (orange badges), warns you ("Wayz: speed camera ahead"), and its battery lasts longer.
 
-**Sound.** Engine (revs through the gears), horn, police siren, crash, phone pings and a
-quiet town ambience, all synthesized in code at startup (`scripts/audio/sfx.gd`), so there are
-no audio files.
+**Sound.** Engine (revs through the gears), horn, police siren, crash and phone pings, all
+synthesized in code at startup (`scripts/audio/sfx.gd`), so there are no audio files. The
+background changes with the district you're in (`scripts/audio/ambience.gd`): traffic and
+crowd chatter downtown, students on campus, songbirds in the park and the suburbs (crickets
+at night), clanks and a backing-up forklift at the port, the roar of the beltway. It's muffled
+inside the car or a building.
 
 **Route 40 strip.** Past the beltway on the east side, Churchmans Loop sweeps around in a long
 curve lined with fast-food parodies (McDougal's, Burger Monarch, Chick-Fil-Hey, Wendell's, Pizza
@@ -168,8 +171,40 @@ only a few percent. The clock line on the HUD shows the current weather.
 ![Dashboard, GPS mount and radio](docs/screenshots/26_dashboard_gps_radio.png)
 ![Wipers](docs/screenshots/29_wipers.png)
 
-**Pedestrians** walk the sidewalks around the blocks, stopping now and then and when you're in
-their way.
+**Day and night.** The sun rises at 6 AM and sets at 6 PM, with an orange glow on the horizon
+at dawn and dusk. When it gets dark the streetlights come on, shop windows, houses and apartments
+light up, every car in traffic turns on its headlights and taillights, and your own headlights
+switch on by themselves (L still toggles them).
+
+**Rush hour and late nights.** On weekdays the roads fill up from 7 to 9 AM and 4 to 6 PM, and
+nearly empty out in the small hours (weekends are calmer). From 10 PM to 4 AM, Yoober and Drift
+pay a +30% late-night surge (purple bars on the app's peak chart), but about half the riders are
+rowdy: they shout and sing along the way, and the ride might end in a big tip, a spilled drink
+(the app pays a cleaning fee, but cleaning takes you 15 minutes), a grumpy rating, or a nap.
+
+![Dusk](docs/screenshots/26_dusk.png)
+
+**People with routines.** Thirty townsfolk each have a home, a role (student, office worker,
+shopper, warehouse worker) and a daily plan: leave home in the morning, walk to class or work,
+go out for lunch, run errands, stroll, head home in the evening. The streets fill up at lunch
+and the evening rush and empty out at night, apart from a few night owls downtown. They cross
+at the crosswalks (waiting for the walk light, or a gap in traffic), cars stop for them, and
+they go inside the places they visit.
+
+**Jams and honking.** At rush hour most drivers head downtown and it slows to a crawl. Drivers
+stuck behind you (double-parked on a delivery, say) lean on the horn after a couple of seconds,
+and long jams get honky too.
+
+**Road work.** Every day a couple of cross-street blocks close for construction: barricades with
+flashing lamps, ROAD CLOSED / DETOUR signs, cones, an excavator and a crew. The GPS, traffic and
+police route around them, the minimap marks them, and the day's closures pop up in the morning.
+
+**Parked cars and birds.** Cars line the curbs of the cross streets (never in front of a
+delivery door). Pigeons peck around the park, campus and downtown sidewalks and burst into the
+air when you walk up or drive past fast, then circle and land again. Gulls glide over the port.
+
+![Road work](docs/screenshots/28_road_work.png)
+![Lunchtime downtown](docs/screenshots/29_lunch_downtown.png)
 
 **Settings** (pause menu): volume, mouse sensitivity, gamepad look speed, mirrors. Saved between runs.
 
@@ -197,13 +232,17 @@ scripts/vehicle/car.gd    VehicleBody3D car with first-person cockpit
 scripts/ui/hud.gd         HUD, minimap, toasts, menus
 scripts/ui/phone.gd       The phone and its apps
 scripts/ui/pause_menu.gd  Pause menu and settings
-scripts/world/pedestrians.gd  People walking the sidewalks
+scripts/world/pedestrians.gd  People with daily routines, walking the sidewalks and crosswalks
+scripts/world/construction.gd Daily road closures (barricades, work zone, detours)
+scripts/world/parked_cars.gd  Cars parked along the cross streets
+scripts/world/birds.gd    Pigeon flocks and gulls
 scripts/audio/sfx.gd      Sound effects synthesized in code
 scripts/audio/music.gd    Radio music and DJ babble synthesized in code
 scripts/audio/radio.gd    Car radio: stations, DJs, ads, captions
 scripts/vehicle/dashboard.gd  Turn signals, hazards, wipers, dash buttons, phone mount
 scripts/ui/gps_screen.gd  The mounted phone's GPS screen
 scripts/ui/windshield.gd  Rain and snow on the windshield, wiper sweeps
+scripts/audio/ambience.gd District soundscapes (synthesized), mixed by place and time of day
 scripts/ui/tutorial.gd    Guided first-day tutorial
 tests/                    Headless smoke test and screenshot renderer
 docs/DESIGN.md            Design doc and roadmap

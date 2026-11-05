@@ -24,6 +24,9 @@ func _ready() -> void:
 	main.auto_tutorial = false
 	add_child(main)
 	main.traffic.police_enabled = false
+	# Keep the same cars and open roads through the older tests; _city_life_tests covers both.
+	main.traffic.auto_density = false
+	main.construction.clear()
 	await frames(30)
 	var town = main.town
 	print("World")
@@ -90,14 +93,25 @@ func _ready() -> void:
 			moved += 1
 		var fx := fposmod(p.x, 90.0)
 		var fz := fposmod(p.z, 90.0)
-		if minf(fx, 90.0 - fx) < 7.5 or minf(fz, 90.0 - fz) < 7.5:
+		# On the grid, or out on the curved Churchmans Loop.
+		var curved: bool = tr.cars[i]._legs[0].size() > 6
+		if minf(fx, 90.0 - fx) < 7.5 or minf(fz, 90.0 - fz) < 7.5 or curved:
 			on_road += 1
-	check(moved >= tr.cars.size() - 3, "traffic moves (%d/%d)" % [moved, tr.cars.size()])
+	# Some will be waiting at lights or in the rush-hour crawl.
+	check(moved >= tr.cars.size() * 0.8, "traffic moves (%d/%d)" % [moved, tr.cars.size()])
 	check(on_road == tr.cars.size(), "traffic stays on roads (%d/%d)" % [on_road, tr.cars.size()])
-	# Park the player's car in front of a traffic car: it must stop short of it.
+	# Park the player's car in front of a traffic car: it must stop short of it (and honk).
 	var ai: Node3D = tr.cars[0]
+	for c in tr.cars:
+		if not c.is_cop and c._legs[0][5] and c._legs[0].size() <= 6 and float(c._legs[0][3]) - c._s > 40.0:
+			ai = c
+			break
+	var honks0: int = tr.honks
 	var block := ai.global_position + ai.global_basis.z * 13.0
 	main.car.teleport(Transform3D(ai.global_basis, block + Vector3(0, 0.5, 0)))
+	# Stand nearby, so you'd hear the honking.
+	var p_home: Vector3 = main.player.global_position
+	main.player.global_position = block + Traffic.right_of(ai.global_basis.z) * 8.0 + Vector3(0, 0.5, 0)
 	# It may be waiting at a red light first, so give it time to roll up and stop.
 	for i in 900:
 		await get_tree().physics_frame
@@ -105,6 +119,12 @@ func _ready() -> void:
 			break
 	var gap_now: float = ai.global_position.distance_to(main.car.global_position)
 	check(ai.speed < 0.5 and gap_now > 4.0, "traffic stops for your car (gap %.1f m, speed %.1f)" % [gap_now, ai.speed])
+	for i in 300:
+		await get_tree().physics_frame
+		if tr.honks > honks0:
+			break
+	check(tr.honks > honks0, "the driver behind you honks")
+	main.player.global_position = p_home
 	main.car.teleport(main.town.car_spawn)
 	await _police_tests(tr)
 	await _ui_tests()
@@ -115,6 +135,8 @@ func _ready() -> void:
 	await _driving_feel_tests()
 	await _map_tests()
 	await _jump_tests()
+	await _city_life_tests()
+	await _day_night_tests()
 
 	print("Phone screens")
 	for app in ["", "yoober", "drift", "doordish", "instacrate", "jungleflex", "bank", "garage", "maps", "me"]:
@@ -273,21 +295,32 @@ func _light_tests(tr: Traffic) -> void:
 	check(tc.must_stop(Vector2i(2, 2), Vector2i(0, 1), 20.0) and not tc.must_stop(Vector2i(2, 2), Vector2i(1, 0), 20.0), "who stops at a light")
 	# An AI car heading south toward the light at (2, 2) stops before the intersection.
 	var ai: Traffic.AICar = tr.cars[1]
+	# Clear the street (other cars, people in the crosswalk) so nothing else stops it.
+	main.pedestrians.process_mode = Node.PROCESS_MODE_DISABLED
+	for p in main.pedestrians.people:
+		p.crossing = false
+	for c in tr.cars.duplicate():
+		if c != ai and not c.is_cop and c.global_position.distance_to(Vector3(2, 0, 1.5) * main.town.B) < 70.0:
+			tr.cars.erase(c)
+			tr._park(c)
 	ai._legs.clear()
 	ai._node_from = Vector2i(2, 1)
 	ai._dir = Vector2i(0, 1)
 	ai._queue_straight()
 	ai._s = 15.0
 	ai.speed = 8.0
-	for i in 360:
+	for i in 720:
 		await get_tree().physics_frame
+		if i > 300 and ai.speed < 0.3:
+			break
 	var stop_z: float = 2 * main.town.B - Traffic.HALF
-	check(ai.speed < 0.5 and ai.global_position.z < stop_z, "AI car stops at a red light (%.1f m short, speed %.1f)" % [stop_z - ai.global_position.z, ai.speed])
+	check(ai.speed < 0.5 and ai.global_position.z < stop_z, "AI car stops at a red light (%.1f m short, speed %.1f, braking for %s)" % [stop_z - ai.global_position.z, ai.speed, ai.blocker])
 	tc._t = 2.0    # north-south green
 	tc._update_lamps(true)
 	for i in 240:
 		await get_tree().physics_frame
 	check(ai.global_position.z > stop_z or ai._dir != Vector2i(0, 1), "AI car goes on green")
+	main.pedestrians.process_mode = Node.PROCESS_MODE_INHERIT
 	# Red light camera: drive into a red at (2, 2) heading south.
 	tc._t = 25.0
 	var c := Vector3(2 * main.town.B, 0, 2 * main.town.B)
@@ -723,20 +756,30 @@ func _pedestrian_tests() -> void:
 	print("Pedestrians")
 	var peds: Pedestrians = main.pedestrians
 	check(peds.people.size() == Pedestrians.COUNT, "pedestrians: %d" % peds.people.size())
-	var start: Array = peds.people.map(func(p): return p.global_position)
+	# Midday: most people are out, strolling or on their way somewhere.
+	var m0: float = Game.minute
+	Game.minute = 12 * 60.0 + 10.0
+	for p in peds.people:
+		p.refresh(true)
+	var out: Array = peds.people.filter(func(p): return p.state != "inside")
+	check(out.size() >= peds.people.size() / 2, "people are out at lunchtime (%d/%d)" % [out.size(), peds.people.size()])
+	var start: Array = out.map(func(p): return p.global_position)
 	await frames(180)
 	var moved := 0
 	var on_walk := 0
-	for i in peds.people.size():
-		var p: Vector3 = peds.people[i].global_position
-		if p.distance_to(start[i]) > 1.0:
+	for i in out.size():
+		var p: Vector3 = out[i].global_position
+		if p.distance_to(start[i]) > 1.0 or out[i].state == "inside":
 			moved += 1
 		var fx := fposmod(p.x, 90.0)
 		var fz := fposmod(p.z, 90.0)
-		if absf(minf(fx, 90.0 - fx) - Pedestrians.INSET) < 0.6 or absf(minf(fz, 90.0 - fz) - Pedestrians.INSET) < 0.6:
+		# On a sidewalk (or the short path between it and a door).
+		var walk := absf(minf(fx, 90.0 - fx) - Pedestrians.INSET) < 0.6 or absf(minf(fz, 90.0 - fz) - Pedestrians.INSET) < 0.6
+		if walk or out[i].state == "inside" or _near_door_path(p, out[i]._in_door) or _near_door_path(p, out[i].activity.get("door", {})):
 			on_walk += 1
-	check(moved >= peds.people.size() - 4, "pedestrians walk (%d/%d)" % [moved, peds.people.size()])
-	check(on_walk == peds.people.size(), "pedestrians stay on sidewalks (%d/%d)" % [on_walk, peds.people.size()])
+	check(moved >= out.size() - 4, "pedestrians walk (%d/%d)" % [moved, out.size()])
+	check(on_walk == out.size(), "pedestrians stay on sidewalks (%d/%d)" % [on_walk, out.size()])
+	Game.minute = m0
 
 
 func _ui_tests() -> void:
@@ -916,3 +959,220 @@ func _jump_tests() -> void:
 	check(landed, "landing bends the knees")
 	await frames(60)
 	check(h._air < 0.05, "back to normal after landing")
+
+
+## On the short walk between a door and the sidewalk in front of it.
+func _near_door_path(p: Vector3, door: Dictionary) -> bool:
+	if door.is_empty():
+		return false
+	var q := Geometry3D.get_closest_point_to_segment(Vector3(p.x, 0, p.z), door.pos, door.walk)
+	return q.distance_to(Vector3(p.x, 0, p.z)) < 0.6
+
+
+func _city_life_tests() -> void:
+	print("City life")
+	var peds: Pedestrians = main.pedestrians
+	var tr: Traffic = main.traffic
+	var town = main.town
+	var m0: float = Game.minute
+	# Routines: a plan that leaves home, goes places, and comes back.
+	var p0: Pedestrians.Walker = peds.people[0]
+	var plan: Array = peds.plan_for(p0, Game.day)
+	var homes: Array = plan.filter(func(e): return e.do == "home")
+	var visits: Array = plan.filter(func(e): return e.do == "visit")
+	check(homes.size() >= 2 and visits.size() >= 2, "%s's day: %s" % [p0.role, ", ".join(plan.map(func(e): return "%s %s" % [Game.time_string(e.at), e.do]))])
+	Game.minute = 3 * 60.0
+	for p in peds.people:
+		p.refresh(true)
+	var night_out: int = peds.outside_count()
+	Game.minute = 17 * 60.0 + 30.0
+	for p in peds.people:
+		p.refresh(true)
+	var rush_out: int = peds.outside_count()
+	check(night_out <= 8 and rush_out > night_out * 2, "streets empty out at night (%d out at 3 AM, %d at 5:30 PM)" % [night_out, rush_out])
+	# Walking between blocks crosses at the crosswalks, and cars stop for people in them.
+	var r: Array = peds.route(peds.corner(Vector2i(1, 1), 0), peds.corner(Vector2i(3, 1), 2))
+	var crossings: Array = r.filter(func(w): return w.cross)
+	check(crossings.size() >= 2, "a walk across town crosses %d streets" % crossings.size())
+	var walker: Pedestrians.Walker = peds.people.filter(func(p): return p.state != "inside")[0]
+	walker.crossing = true
+	var obs: Array = tr.obstacles(null).filter(func(o): return o[1] == "ped")
+	check(obs.size() >= 1, "traffic sees people in the crosswalk")
+	walker.crossing = false
+	# Someone told to visit a door walks there and goes inside.
+	var door: Dictionary = peds._food[0]
+	walker.global_position = peds.corner(door.block, 0)
+	walker.activity = {"do": "visit", "door": door, "stay": 30.0, "at": Game.minute}
+	walker.state = "stroll"
+	walker._start(walker.activity)
+	walker.speed = 6.0
+	for i in 1800:
+		await get_tree().physics_frame
+		if walker.state == "inside":
+			break
+	check(walker.state == "inside" and not walker.visible, "walked to %s and went in" % town.places.filter(func(pl): return Vector3(pl.door.x, 0, pl.door.z).distance_to(door.pos) < 0.5)[0].name)
+	walker.speed = 1.4
+
+	# Traffic follows the clock.
+	tr.auto_density = true
+	Game.minute = 3 * 60.0
+	tr.rebalance()
+	var night_cars: int = tr.civilians()
+	Game.minute = 8 * 60.0
+	tr.rebalance()
+	var rush_cars: int = tr.civilians()
+	check(rush_cars > night_cars * 2 and tr.rush_hour(), "rush hour traffic: %d cars at 8 AM, %d at 3 AM" % [rush_cars, night_cars])
+	Game.minute = 13 * 60.0
+	tr.rebalance()
+	tr.auto_density = false
+	await frames(5)
+
+	# Road work: closed roads are fenced off, routed around, and left out of AI turns.
+	var works: Construction = main.construction
+	works.pick_for_day(Game.day)
+	check(works.sites.size() == Construction.PER_DAY, "road work today: %d closures" % works.sites.size())
+	var site: Dictionary = works.sites[0]
+	var gps: GPS = main.gps
+	var pa: Vector3 = works._pos(site.a)
+	var pb: Vector3 = works._pos(site.b)
+	var along: Vector3 = (pb - pa).normalized()
+	var side := Vector3(-along.z, 0, along.x)
+	gps.update(pa - along * 3.0 + side * 3.5, along, pb + along * 3.0 + side * 3.5, "Test", true)
+	var mid: Vector3 = (pa + pb) / 2.0
+	var through := false
+	for q in gps.route:
+		if Vector3(q.x, 0, q.z).distance_to(mid) < 20.0:
+			through = true
+	check(not through and gps.route.size() > 2, "GPS detours around the closed road (%d points)" % gps.route.size())
+	check(not site.b - site.a in tr._exits(site.a, Vector2i.ZERO), "traffic won't turn into the closed road")
+	var q := PhysicsRayQueryParameters3D.create(pa + along * 4.0 + Vector3(0, 0.6, 0), mid + Vector3(0, 0.6, 0))
+	q.exclude = [main.car.get_rid(), main.player.get_rid()]
+	var hit: Dictionary = main.get_world_3d().direct_space_state.intersect_ray(q)
+	check(not hit.is_empty() and hit.position.distance_to(pa) < Construction.END_GAP + 1.5, "barricade blocks the road")
+	var day0: Array = works.closures()
+	works.pick_for_day(Game.day + 1)
+	check(works.closures() != day0, "different road work tomorrow")
+	works.clear()
+	gps.set_closed([])
+
+	# Parked cars sit in the parking lane, clear of traffic and intersections.
+	var pc: ParkedCars = main.parked_cars
+	var bad := 0
+	for c in pc.cars:
+		var p: Vector3 = c.global_position
+		var fx := fposmod(p.x, 90.0)
+		var off := minf(fx, 90.0 - fx)
+		var fz := fposmod(p.z, 90.0)
+		if absf(off - ParkedCars.OFFSET) > 0.2 or minf(fz, 90.0 - fz) < Traffic.HALF + 4.0:
+			bad += 1
+	check(pc.cars.size() > 40 and bad == 0, "parked cars: %d (%d out of place)" % [pc.cars.size(), bad])
+
+	# Birds scatter when you walk up, and roost at night.
+	var birds: Birds = main.birds
+	var f: Dictionary = birds.flocks[0]
+	var pl: Player = main.player
+	pl.global_position = f.home + Vector3(12, 0.3, 0)
+	Game.minute = 12 * 60.0
+	await frames(10)
+	check(f.state == "ground" and f.birds[0].visible, "pigeons on the ground")
+	var y0: float = f.birds[0].global_position.y
+	pl.global_position = f.home + Vector3(2, 0.3, 0)
+	await frames(60)
+	check(f.state == "flying" and f.birds[0].global_position.y > y0 + 1.5, "pigeons fly off when you walk up")
+	pl.global_position = f.home + Vector3(60, 0.3, 0)
+	Game.minute = 23 * 60.0
+	await frames(5)
+	check(f.state == "ground" and not f.birds[0].visible, "birds roost at night")
+	Game.minute = 12 * 60.0
+
+	# District sounds.
+	var amb: Ambience = main.ambience
+	var B: float = town.B
+	check(amb.district_at(Vector3(2.5 * B, 0, 2.5 * B)) == "downtown" and amb.district_at(Vector3(4.5 * B, 0, 4.5 * B)) == "port" \
+		and amb.district_at(Vector3(2.5 * B, 0, 1.5 * B)) == "park" and amb.district_at(Vector3(-town.RING, 0, 2 * B)) == "highway" \
+		and amb.district_at(Vector3(0.5 * B, 0, 1.5 * B)) == "campus", "districts")
+	var park_day: Dictionary = amb.mix_at(Vector3(2.5 * B, 0, 1.5 * B), 12 * 60.0)
+	var park_night: Dictionary = amb.mix_at(Vector3(2.5 * B, 0, 1.5 * B), 23 * 60.0)
+	var port: Dictionary = amb.mix_at(Vector3(4.5 * B, 0, 4.5 * B), 12 * 60.0)
+	var downtown: Dictionary = amb.mix_at(Vector3(2.5 * B, 0, 2.5 * B), 12 * 60.0)
+	check(park_day.birds > 0.5 and park_night.birds < 0.05 and park_night.crickets > 0.5, "park: birds by day, crickets at night")
+	check(port.port > 0.6 and downtown.city > 0.6 and downtown.get("port", 0.0) < 0.1, "port machinery, downtown traffic")
+	for i in 600:
+		await get_tree().physics_frame
+		if amb.ready_to_play():
+			break
+	check(amb.ready_to_play() and amb._players.size() == Ambience.LAYERS.size(), "ambience loops built")
+	pl.global_position = town.spawn_point
+	Game.minute = m0
+func _day_night_tests() -> void:
+	print("Day and night")
+	var saved_min: float = Game.minute
+	var saved_day: int = Game.day
+	var saved_car: String = Game.car_id
+	var tr: Traffic = main.traffic
+	Game.day = 1   # a Monday
+	Game.minute = 12 * 60.0
+	await frames(5)
+	check(Game.daylight() == 1.0 and not Game.lights_on(), "noon is full daylight")
+	check(not main.town._street_lights[0].visible, "streetlights off at noon")
+	Game.minute = 18 * 60.0 + 20.0
+	check(Game.lights_on(), "lights come on at dusk (6:20 PM, daylight %.2f)" % Game.daylight())
+	Game.minute = 21 * 60.0
+	await frames(5)
+	check(main.town._street_lights[0].visible, "streetlights on at night")
+	check(Kit.lit_glass("shop").emission_energy_multiplier > 0.4 and Kit.lit_glass("home").emission_energy_multiplier > 0.4, "shop and house windows glow")
+	check(tr.night and tr.cars[0]._night.visible, "traffic has headlights on")
+	if main.is_driving():
+		main.exit_car()
+	main.enter_car()
+	check(main.car.headlights_on, "your headlights come on at night")
+	main.exit_car()
+	# Rush hour: busiest at 8 AM and 5 PM on weekdays, nearly empty at 3 AM, calmer on weekends.
+	check(Game.is_rush_hour(8) and Game.is_rush_hour(17) and not Game.is_rush_hour(13), "rush hours 8 AM and 5 PM")
+	Game.minute = 3 * 60.0
+	var night_n := tr.target_count()
+	Game.minute = 8 * 60.0
+	var rush_n := tr.target_count()
+	Game.day = 6   # Saturday
+	var weekend_n := tr.target_count()
+	Game.day = 1
+	check(rush_n > weekend_n and weekend_n > night_n, "traffic: %d cars at rush hour, %d on a weekend morning, %d at 3 AM" % [rush_n, weekend_n, night_n])
+	# The traffic manager adds and removes cars out of sight to match.
+	tr.auto_density = true
+	main.player.global_position = main.town.spawn_point
+	Game.minute = 3 * 60.0
+	for i in 40:
+		tr._density_t = 0.0
+		tr._update_density(0.1)
+	check(tr.civilians() == night_n, "late night thins traffic to %d cars (%d in reserve)" % [tr.civilians(), tr.reserve.size()])
+	Game.minute = 8 * 60.0
+	for i in 60:
+		tr._density_t = 0.0
+		tr._update_density(0.1)
+	check(tr.civilians() >= rush_n - 2, "rush hour fills the roads back up (%d cars)" % tr.civilians())
+	var hidden_ok := true
+	for c in tr.cars:
+		hidden_ok = hidden_ok and c.visible
+	for c in tr.reserve:
+		hidden_ok = hidden_ok and not c.visible
+	check(hidden_ok, "only cars on the road are shown")
+	tr.auto_density = false
+	# Late-night rides: surge pay and rowdy riders.
+	Game.car_id = "civil"
+	Game.minute = 23 * 60.0
+	Gigs.set_online("yoober", true)
+	Gigs._make_offer("yoober")
+	var o: Dictionary = Gigs.offers.back()
+	check(o.get("night_pay", 0.0) > 0.0, "11 PM ride includes a late-night surge (+$%.2f)" % o.get("night_pay", 0.0))
+	Gigs.decline(o.id)
+	Game.minute = 13 * 60.0
+	Gigs._make_offer("yoober")
+	o = Gigs.offers.back()
+	check(o.get("night_pay", 0.0) == 0.0 and not o.get("rowdy", false), "no late-night surge or rowdy riders at 1 PM")
+	Gigs.decline(o.id)
+	Gigs.set_online("yoober", false)
+	check(Gigs.rowdy_outcome(0.1).tip > 0.0 and Gigs.rowdy_outcome(0.5).has("clean_minutes") and Gigs.rowdy_outcome(0.7).stars < 0.0, "rowdy riders: big tips, messes, bad ratings")
+	Game.minute = saved_min
+	Game.day = saved_day
+	Game.car_id = saved_car
+	await frames(5)

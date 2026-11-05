@@ -114,13 +114,15 @@ addresses (101 in total) with doorstep drop-off points.
 
 **Done**
 - AI traffic, police with line-of-sight speeding detection, chases and tickets.
-- Pedestrians on sidewalks.
+- Pedestrians with daily routines (home, work or class, lunch, errands), crossing at crosswalks.
+- Traffic density by time of day, rush-hour jams downtown, honking.
+- Daily construction closures that the GPS and traffic detour around.
+- Parked cars, pigeons and gulls, district soundscapes.
 - Sound: engine, horn, siren, crash, phone pings, ambience (synthesized).
 - Quaternius character, trees and cop car; Poly Haven textures and props.
 - Mirrors, turn-by-turn GPS, pause menu with settings, gamepad support, tutorial.
 
 **Next (polish the slice)**
-- Pedestrians crossing at crosswalks, with cars yielding.
 - Turn signals, parking spot detection, parking tickets.
 - More Quaternius cars/characters/trees once their download hosts are reachable.
 - Real motion-capture walk clips (Mixamo) retargeted onto the character.
