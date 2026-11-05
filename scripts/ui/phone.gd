@@ -1,6 +1,7 @@
 class_name Phone
 extends CanvasLayer
-## The in-game smartphone. Gig apps, Bank (bills), Garage (car), Maps (GPS), and Me (needs).
+## The in-game smartphone. Gig apps, Bank (bills), Garage (car), Maps (GPS), Hail Yeah
+## (taxi and bus), and Me (needs, saving).
 
 var main: Node = null
 var is_open := false
@@ -16,7 +17,7 @@ var _heat_ahead := 0          # hot zone map preview: hours from now
 
 const ICONS := {
 	"yoober": "Y", "drift": "D", "doordish": "DD", "instacrate": "IC", "jungleflex": "JF",
-	"bank": "$", "garage": "G", "maps": "M", "me": "Me",
+	"bank": "$", "garage": "G", "maps": "M", "cab": "HY", "me": "Me",
 }
 
 
@@ -219,6 +220,7 @@ func _build_screen() -> void:
 		"bank": _bank()
 		"garage": _garage()
 		"maps": _maps()
+		"cab": _cab()
 		"me": _me()
 		_: _gig_app(current_app)
 
@@ -238,6 +240,7 @@ func _home() -> void:
 	apps.append(["bank", "Bank", Color(0.15, 0.4, 0.2)])
 	apps.append(["garage", "Garage", Color(0.35, 0.35, 0.4)])
 	apps.append(["maps", "Maps", Color(0.2, 0.45, 0.75)])
+	apps.append(["cab", "Hail Yeah", Color(0.75, 0.6, 0.1)])
 	apps.append(["me", "Me", Color(0.55, 0.35, 0.65)])
 	for a in apps:
 		var id: String = a[0]
@@ -532,6 +535,13 @@ func _maps() -> void:
 	m.custom_minimum_size = Vector2(0, 280)
 	m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	m.place_picked.connect(func(p): _pick_place(p))
+	m.point_picked.connect(func(at):
+		main.drop_pin(at)
+		_rebuild())
+	m.clear_requested.connect(func():
+		main.map_waypoint = {}
+		main.refresh_gps()
+		_rebuild())
 	_screen.add_child(m)
 	var key := _card()
 	WorldMap.legend(key, 2, 11)
@@ -556,7 +566,66 @@ func _maps() -> void:
 
 func _pick_place(place: Dictionary) -> void:
 	main.set_waypoint(place.pos, place.name)
+	main.map_waypoint["drop"] = main.transit.drop_point(place)
 	_rebuild()
+
+
+## Hail Yeah: call a cab to anywhere on the map, or check the bus.
+func _cab() -> void:
+	var tr: Transit = main.transit
+	_header(GameData.TAXI_NAME, Color(0.75, 0.6, 0.1), "Hail yeah, we'll take you there. $%.2f + $%.2f/mi (more from 11 PM to 5 AM). Your car stays put." % [GameData.TAXI_BASE, GameData.TAXI_PER_MILE])
+	var why := tr.blocked_reason()
+	if why != "":
+		var c := _card(Color(0.3, 0.15, 0.1))
+		_lbl(c, why, 15, Color(1, 0.85, 0.6))
+	var here: Vector3 = main.actor_position()
+	var targets: Array = []
+	if not main.map_waypoint.is_empty():
+		var wp: Dictionary = main.map_waypoint
+		targets.append({"name": "GPS: " + wp.label, "drop": wp.get("drop", wp.pos)})
+	var m := WorldMap.new()
+	m.main = main
+	var ps: Array = m.places()
+	m.free()
+	for kind in ["car", "home"]:
+		for p in ps.filter(func(p): return p.get("kind", "") == kind):
+			targets.append({"name": p.name, "drop": tr.drop_point(p)})
+	var rest: Array = ps.filter(func(p): return not p.get("kind", "") in ["car", "home", "bus", "restroom"])
+	rest.sort_custom(func(a, b): return here.distance_to(a.pos) < here.distance_to(b.pos))
+	for p in rest:
+		targets.append({"name": p.name, "drop": tr.drop_point(p)})
+	_lbl(_screen, "Where to?", 16)
+	for t in targets:
+		var dest: Dictionary = t
+		var q := tr.taxi_quote(dest.drop)
+		if q.miles < 0.25:
+			continue
+		var b := _live_button(_screen, "%s\n$%.2f  ·  %d min" % [dest.name, q.fare, q.minutes],
+			func(): tr.ride_taxi(dest.drop, dest.name),
+			func(): return why == "" and Game.money >= q.fare, Color(0.22, 0.2, 0.14))
+		b.add_theme_font_size_override("font_size", 13)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var bus := _card(Color(0.25, 0.12, 0.2))
+	_lbl(bus, "Bus: %s" % GameData.BUS_NAME, 16, Color(1, 0.8, 0.9))
+	var stop := tr.nearest_stop(here)
+	var wait := tr.bus_wait()
+	_lbl(bus, "$%.2f a ride between bus stops (B on the map). Every %d min, %d AM to midnight." % [GameData.BUS_FARE, GameData.BUS_EVERY, GameData.BUS_FIRST_HOUR], 12, Color(0.85, 0.8, 0.85))
+	if wait < 0.0:
+		_lbl(bus, "No buses running right now.", 13, Color(1, 0.7, 0.6))
+	if not stop.is_empty():
+		var near: Dictionary = stop
+		var mi := here.distance_to(near.pos) / GameData.METERS_PER_MILE
+		var sb: Button
+		if tr.at_stop() == near:
+			sb = _btn(bus, "Ride from %s" % near.short, func():
+				close()
+				tr.bus_menu(near), Color(0.45, 0.2, 0.35))
+		else:
+			sb = _btn(bus, "GPS to the nearest stop: %s (%.1f mi)" % [near.short, mi], func():
+				main.set_waypoint(near.pos, near.name)
+				_rebuild(), Color(0.45, 0.2, 0.35))
+		sb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 func _me() -> void:
@@ -582,5 +651,8 @@ func _me() -> void:
 			if Game.buy_phone_upgrade():
 				_rebuild(), func(): return Game.money >= GameData.PHONE_PRO_PRICE, Color(0.25, 0.35, 0.6))
 	var sv := _card()
-	_btn(sv, "Save game", func(): Game.save_game())
-	_btn(sv, "Load game", func(): main.load_game())
+	_btn(sv, "Save game (%s)" % Game.slot_name(Game.current_slot), func():
+		Game.save_game()
+		_rebuild())
+	_btn(sv, "Load latest save", func(): main.load_game(Game.latest_slot()))
+	_lbl(sv, "More slots in the pause menu (%s)." % Game.key("pause"), 12, Color(0.75, 0.75, 0.8))

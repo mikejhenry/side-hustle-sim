@@ -27,7 +27,6 @@ var _menu_title: Label
 var _menu_list: VBoxContainer
 var _fade: ColorRect
 var _fade_label: Label
-var _drowsy: ColorRect
 var _help: PanelContainer
 var _mm_cam: Camera3D
 var _mm_marker: MeshInstance3D
@@ -60,11 +59,6 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	_drowsy = ColorRect.new()
-	_drowsy.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_drowsy.color = Color(0, 0, 0, 0)
-	_drowsy.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_drowsy)
 	if main:
 		windshield = Windshield.new()
 		windshield.car = main.car
@@ -377,13 +371,13 @@ WASD or arrows / left stick: walk or drive      Mouse / right stick: look
 Gamepad driving: RT gas, LT brake and reverse, left stick steers
 Shift / L3: sprint        Space / A: jump or handbrake
 E / X: interact, get in or out of the car
-Tab or P / Y: phone (gig apps, bank, garage, maps)     A: pick   B: back
+Tab or P / Y: phone (gig apps, bank, garage, maps, Hail Yeah cabs)     A: pick   B: back
 C / LB: driving camera (first person / chase)     M / D-pad up: mirror mode
 L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
 G / D-pad right: full map     Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
 Z / X / D-pad left: turn signals     B: hazards     V: wipers     N / comma: radio
 In first person, look at a dashboard button and press E / X (or click) to use it
-F5: save        F9: load
+F5: save to your slot        F9: load your latest save        Map: click anywhere to drop a pin
 
 THE LAW
 Speed limit is 30 mph in town and 45 on the beltway. Police only notice
@@ -472,7 +466,6 @@ func _process(_delta: float) -> void:
 	_bars["Bladder"].value = Game.bladder
 	_bars["Energy"].value = Game.energy
 	_bars["Phone"].value = Game.phone_battery
-	_drowsy.color.a = clampf((18.0 - Game.energy) / 18.0, 0.0, 1.0) * 0.55
 
 	if main:
 		var driving: bool = main.is_driving()
@@ -695,11 +688,19 @@ func show_menu(title: String, options: Array) -> void:
 	_menu_list.add_child(close)
 	_menu.visible = true
 	menu_open = true
-	_menu.reset_size()
-	_menu.position = (_menu.get_viewport_rect().size - _menu.size) / 2.0
+	_fit_menu()
+	# The wrapped title only knows its height after a layout pass; fit again then, or the
+	# first menu you open comes out screen-tall.
+	if not get_tree().process_frame.is_connected(_fit_menu):
+		get_tree().process_frame.connect(_fit_menu, CONNECT_ONE_SHOT)
 	Game.pad_focus.call_deferred(_menu_list)
 	if main:
 		main.update_mouse_mode()
+
+
+func _fit_menu() -> void:
+	_menu.reset_size()
+	_menu.position = (_menu.get_viewport_rect().size - _menu.size) / 2.0
 
 
 func close_menu() -> void:
@@ -726,6 +727,24 @@ func _on_slept(hours: float) -> void:
 	tw.tween_interval(1.5)
 	tw.tween_property(_fade, "color:a", 0.0, 1.2)
 	tw.parallel().tween_property(_fade_label, "modulate:a", 0.0, 1.2)
+
+
+## Fades to black with `text` in the middle (taxi and bus rides). Await it.
+func fade_out(text: String) -> void:
+	_fade_label.text = text
+	_fade_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fade_label.reset_size()
+	_fade_label.position = (_fade.size - _fade_label.size) / 2.0
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 1.0, 0.5)
+	tw.parallel().tween_property(_fade_label, "modulate:a", 1.0, 0.5)
+	await tw.finished
+
+
+func fade_in() -> void:
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 0.0, 0.8)
+	tw.parallel().tween_property(_fade_label, "modulate:a", 0.0, 0.8)
 
 
 ## Bright white flash, like a traffic camera going off.

@@ -446,7 +446,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look_yaw = clampf(_look_yaw - event.relative.x * MOUSE_SENS * Game.mouse_sens, -1.9, 1.9)
-		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens, -0.8, 0.5)
+		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens * Game.look_y_sign(), -0.8, 0.5)
 
 
 func _physics_process(delta: float) -> void:
@@ -507,7 +507,7 @@ func _physics_process(delta: float) -> void:
 		var look := Game.look_stick()
 		if look != Vector2.ZERO or Game.using_pad:
 			var want_yaw := -look.x * NECK_YAW
-			var want_pitch := -0.08 - look.y * NECK_PITCH
+			var want_pitch := -0.08 - look.y * NECK_PITCH * Game.look_y_sign()
 			var rate := (5.0 if look != Vector2.ZERO else 3.5) * Game.pad_sens
 			var k := 1.0 - exp(-rate * delta)
 			_look_yaw = lerpf(_look_yaw, want_yaw, k)

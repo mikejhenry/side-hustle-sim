@@ -280,6 +280,7 @@ func _ready() -> void:
 	Game.money = 1.0
 	main.load_game()
 	check(Game.money > 1000.0, "save/load round trip")
+	await _polish_tests()
 
 	await frames(10)
 	print("\n%s: %d failure(s)" % ["PASSED" if failures == 0 else "FAILED", failures])
@@ -1244,3 +1245,96 @@ func _day_night_tests() -> void:
 	Game.day = saved_day
 	Game.car_id = saved_car
 	await frames(5)
+
+
+func _polish_tests() -> void:
+	print("Save slots")
+	var keep := FileAccess.get_file_as_bytes(Game.slot_path(3)) if Game.has_save(3) else PackedByteArray()
+	Game.money = 1234.0
+	Game.save_game(3)
+	check(Game.slot_info(3).money == 1234.0 and Game.current_slot == 3, "saved to slot 3 (%s)" % Game.slot_summary(3))
+	check(Game.latest_slot() == 3, "slot 3 is the latest save")
+	Game.money = 5.0
+	main.load_game(3)
+	check(Game.money == 1234.0, "loaded slot 3")
+	Game.delete_save(3)
+	check(not Game.has_save(3) and Game.slot_summary(3) == "Empty", "deleted slot 3")
+	if not keep.is_empty():
+		var f := FileAccess.open(Game.slot_path(3), FileAccess.WRITE)
+		f.store_buffer(keep)
+		f.close()
+	Game.current_slot = 1
+
+	print("Taxi and bus")
+	var tr: Transit = main.transit
+	check(tr.stops.size() == 8, "bus stops: %d" % tr.stops.size())
+	if main.driving:
+		main.exit_car()
+	Gigs.reset_jobs()
+	Game.phone_service = true
+	Game.phone_battery = 80.0
+	Game.minute = 10 * 60.0
+	Game.energy = 90.0
+	Game.hunger = 90.0
+	Game.bladder = 10.0
+	Game.money = 500.0
+	main.player.global_position = main.town.spawn_point
+	await frames(5)
+	check(tr.blocked_reason() == "", "can ride when on foot with no job ('%s')" % tr.blocked_reason())
+	var place: Dictionary = main.town.restaurants[0]
+	var dest := tr.drop_point(place)
+	var q := tr.taxi_quote(dest)
+	var t0 := Game.total_minutes()
+	check(tr.ride_taxi(dest, place.name), "called a cab ($%.2f, %d min)" % [q.fare, q.minutes])
+	await frames(150)
+	check(main.player.global_position.distance_to(dest) < 2.0, "taxi dropped you at %s" % place.name)
+	check(absf(Game.money - (500.0 - q.fare)) < 0.01, "taxi fare charged")
+	check(Game.total_minutes() - t0 >= q.minutes - 0.01, "taxi ride took %d min" % int(Game.total_minutes() - t0))
+	main.enter_car()
+	check(tr.blocked_reason() != "" and not tr.ride_taxi(dest, "x"), "no taxi while driving")
+	main.exit_car()
+	var a: Dictionary = tr.stops[0]
+	var b: Dictionary = tr.stops[5]
+	main.player.global_position = a.pos + Vector3(0, 0.6, 0)
+	await frames(5)
+	check(tr.at_stop() == a, "standing at %s" % a.name)
+	var money := Game.money
+	check(tr.ride_bus(a, b), "rode the bus")
+	await frames(150)
+	check(main.player.global_position.distance_to(b.pos) < 2.0 and absf(money - Game.money - GameData.BUS_FARE) < 0.01, "bus dropped you at %s" % b.short)
+	Game.minute = 60.0
+	check(tr.bus_wait() < 0.0 and not tr.ride_bus(b, a), "no buses at 1 AM")
+	Game.minute = 10 * 60.0
+	main.drop_pin(Vector3(200, 0, 130))
+	check(str(main.map_waypoint.get("label", "")).begins_with("Pin on"), "dropped a map pin (%s)" % main.map_waypoint.get("label", ""))
+	main.map_waypoint = {}
+
+	print("Settings and screen effects")
+	Game.invert_y = true
+	check(Game.look_y_sign() == -1.0, "invert look")
+	Game.invert_y = false
+	var fov: float = Game.fov
+	Game.fov = 90.0
+	main.apply_view_settings()
+	check(main.player.camera.fov == 90.0 and main.car.fp_camera.fov == 98.0, "field of view applies")
+	Game.fov = fov
+	main.apply_view_settings()
+	Game.energy = 4.0
+	Game.hunger = 3.0
+	Game.bladder = 95.0
+	await frames(5)
+	check(main.needs_fx._rect.visible, "screen effects show when tired and hungry")
+	Game.screen_fx = 0.0
+	await frames(2)
+	check(not main.needs_fx._rect.visible, "screen effects can be turned off")
+	Game.screen_fx = 1.0
+	Game.energy = 90.0
+	Game.hunger = 90.0
+	Game.bladder = 10.0
+	await frames(2)
+	check(not main.needs_fx._rect.visible, "no effects when your needs are fine")
+
+	print("New game")
+	main.new_game()
+	check(Game.day == 1 and Game.money == GameData.START_MONEY and Game.car_id == "rustwagon", "new game resets")
+	check(main.player.global_position.distance_to(main.town.spawn_point) < 1.0, "new game puts you at Dottie's")
