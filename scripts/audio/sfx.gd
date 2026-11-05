@@ -41,6 +41,12 @@ static func _build(sound_name: String) -> AudioStreamWAV:
 		"shutter": return _wav(_shutter(), false)
 		"rain": return _wav(_rain(), true)
 		"thunder": return _wav(_thunder(), false)
+		"skid": return _wav(_skid(), true)
+		"tick": return _wav(_click(2600.0, 0.6), false)
+		"tock": return _wav(_click(1900.0, 0.5), false)
+		"button": return _wav(_click(1400.0, 0.35), false)
+		"static": return _wav(_static(), false)
+		"wiper": return _wav(_wiper(), false)
 	return _wav(PackedFloat32Array([0.0]), false)
 
 
@@ -234,4 +240,75 @@ static func _ambience() -> PackedFloat32Array:
 			var w := float(i) / fade
 			out[i] = raw[i] * w + raw[n + i] * (1.0 - w)
 		out[i] *= 2.2
+	return out
+
+
+## Tire squeal: a wavering tone over a band of noise. 0.5 s with whole cycles, so it loops.
+static func _skid() -> PackedFloat32Array:
+	var n := RATE / 2
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var lp := 0.0
+	var ph := 0.0
+	for i in n:
+		var t := float(i) / n
+		ph += TAU * (880.0 + 60.0 * sin(TAU * 4.0 * t)) / RATE
+		lp = lerpf(lp, rng.randf_range(-1.0, 1.0), 0.45)
+		out[i] = (sin(ph) * 0.35 + sin(ph * 2.01) * 0.12 + lp * 0.35) * 0.7
+	# Ease the seam.
+	var fade := 220
+	for i in fade:
+		var k := float(i) / fade
+		out[i] *= k
+		out[n - 1 - i] *= k
+	return out
+
+
+## A dashboard relay click (turn signals, buttons).
+static func _click(freq: float, vol: float) -> PackedFloat32Array:
+	var n := int(RATE * 0.04)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(freq)
+	for i in n:
+		var t := float(i) / RATE
+		out[i] = (sin(TAU * freq * t) * 0.6 + rng.randf_range(-1.0, 1.0) * 0.4) * exp(-t * 220.0) * vol
+	return out
+
+
+## Radio static between stations.
+static func _static() -> PackedFloat32Array:
+	var n := int(RATE * 0.45)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		lp = lerpf(lp, rng.randf_range(-1.0, 1.0), 0.6)
+		var env := minf(1.0, t * 80.0) * minf(1.0, (0.45 - t) * 12.0)
+		var crackle := rng.randf_range(-1.0, 1.0) if rng.randf() < 0.01 else 0.0
+		out[i] = clampf((lp * 0.35 + crackle * 0.6) * env, -1.0, 1.0)
+	return out
+
+
+## Wiper blade: a rubbery swish with a soft thunk at the end of the stroke.
+static func _wiper() -> PackedFloat32Array:
+	var n := int(RATE * 0.5)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		lp = lerpf(lp, rng.randf_range(-1.0, 1.0), 0.08)
+		var swish := lp * sin(PI * clampf(t / 0.42, 0.0, 1.0)) * 0.9
+		var u := t - 0.42
+		var thunk := sin(TAU * 90.0 * u) * exp(-u * 40.0) * 0.5 if u > 0.0 else 0.0
+		out[i] = clampf(swish + thunk, -1.0, 1.0)
 	return out

@@ -336,7 +336,10 @@ func _week_heatmap(parent: Node, id: String) -> void:
 		for h in 24:
 			var cell := ColorRect.new()
 			cell.custom_minimum_size = Vector2(11, 11)
-			cell.set_meta("base", WorldMap.heat_color((Gigs.surge(id, h, wd) - 0.9) / 1.1))
+			var s := Gigs.surge(id, h, wd)
+			if Gigs.app(id).kind == "ride" and Game.is_late_night(h):
+				s *= GameData.LATE_NIGHT_SURGE    # bars-closing surge
+			cell.set_meta("base", WorldMap.heat_color((s - 0.9) / 1.1))
 			cell.set_meta("at", Vector2i(wd, h))
 			cell.color = cell.get_meta("base")
 			grid.add_child(cell)
@@ -405,6 +408,8 @@ func _offer_card(o: Dictionary, _a: Dictionary) -> void:
 			_lbl(v, "%s • %.1f mi trip • pickup %.1f mi away%s" % [o.passenger, o.miles, o.pickup_miles,
 				" • %s surge +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
 			_lbl(v, "From: %s\nTo: %s" % [o.pickup.name, o.dropoff.name], 13, Color(0.85, 0.85, 0.9))
+			if o.get("night_pay", 0.0) > 0.0:
+				_lbl(v, "Late-night surge +$%.2f%s" % [o.night_pay, " • Rider may be rowdy" if o.get("rowdy", false) else ""], 13, Color(0.75, 0.6, 1.0))
 		"food":
 			_lbl(v, "%.1f mi total • incl. $%.0f tip%s%s" % [o.miles, o.tip, " • Peak Pay +$%.2f" % o.peak_pay if o.peak_pay > 0 else "",
 				" • %s boost +$%.2f" % [Game.weather_text(), o.weather_pay] if o.get("weather_pay", 0.0) > 0.0 else ""], 14)
