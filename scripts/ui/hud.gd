@@ -375,7 +375,7 @@ Tab or P / Y: phone (gig apps, bank, garage, maps, Hail Yeah cabs)     A: pick  
 C / LB: driving camera (first person / chase)     M / D-pad up: mirror mode
 L / RB: headlights     R / D-pad down: flip car upright     H / R3: horn
 G / D-pad right: full map     Esc / Start: pause menu     F1 / Back: this help     F3: graphics quality
-Z / X / D-pad left: turn signals     B: hazards     V: wipers     N / comma: radio
+Z / X / D-pad left: turn signals     B: hazards     V: wipers     N or comma / L3: radio
 In first person, look at a dashboard button and press E / X (or click) to use it
 F5: save to your slot        F9: load your latest save        Map: click anywhere to drop a pin
 

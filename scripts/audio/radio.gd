@@ -94,7 +94,10 @@ func _ready() -> void:
 		_offsets[STATIONS[i].style] = _rng.randf_range(0.0, 20.0)
 	station = clampi(Game.radio_station, 0, STATIONS.size() - 1)
 	power = Game.radio_on
+	# Build every station's music in the background now, so tuning later is instant.
 	_prepare(STATIONS[station].style)
+	for st in STATIONS:
+		_prepare(st.style)
 
 
 func _exit_tree() -> void:
@@ -160,6 +163,8 @@ func _tuned() -> void:
 	if power:
 		_prepare(current().style)
 		_next_segment = _rng.randf_range(6.0, 14.0) if current().style != "talk" else 1.5
+	if active:
+		Game.notify("Radio: %s  (%s for the next station)" % [display_text(), Game.key("radio_next")], "info")
 	changed.emit()
 
 
