@@ -717,11 +717,14 @@ func _grocery(lot: Node3D, sname: String, color: Color) -> void:
 		func():
 			if Game.home_id == "":
 				return ""
-			return "Buy groceries for home ($%.0f, %d meals)" % [GameData.HOME_GROCERIES_PRICE, GameData.HOME_GROCERIES_MEALS],
+			return "Buy groceries for home ($%.0f, %d meals with your %s)" % [GameData.HOME_GROCERIES_PRICE,
+				Game.grocery_meals(), GameData.KITCHEN_NAMES[Game.kitchen_tier()].to_lower()],
 		func():
+			var meals := Game.grocery_meals()
 			if Game.spend(GameData.HOME_GROCERIES_PRICE, sname + ": groceries"):
-				Game.fridge_meals += GameData.HOME_GROCERIES_MEALS
-				Game.notify("Groceries bought. They're in your fridge at home.", "good"))
+				Game.fridge_meals += meals
+				Game.notify("Groceries bought: %d meals ($%.2f each). They're in your fridge at home." % [
+					meals, GameData.HOME_GROCERIES_PRICE / meals], "good"))
 	_toilet(b, Vector3(-size.x / 2.0 + 1.5, 0, -size.z / 2.0 + 1.0))
 	var p := _place(sname, lot, Vector3(0, 0, -2.0), "grocery")
 	stores.append({"name": sname, "door": p.door, "curb": p.curb, "items": items})
@@ -923,26 +926,46 @@ func _home(lot: Node3D, id: String, bname: String, size: Vector3, color: Color, 
 	var h: Dictionary = GameData.HOMES[id]
 	var hw := size.x / 2.0
 	var hd := size.z / 2.0
+	# Built-ins (the bed that came with the place, toilet, fridge, kitchen, couch, leasing desk).
+	# `reserved` keeps furniture you place off of them and out of the doorway.
+	var reserved: Array = [
+		Rect2(-hw, -hd, 3.4, 4.0),                 # bed
+		Rect2(hw - 2.0, -hd, 2.0, 2.4),            # toilet
+		Rect2(hw - 2.1, -0.4, 2.1, 3.3),           # fridge + kitchen counter
+		Rect2(-1.4, -hd, 2.8, 1.6),                # couch
+		Rect2(-hw, hd - 3.6, 2.6, 3.6),            # leasing desk
+		Rect2(-1.8, hd - 3.0, 3.6, 3.0),           # doorway
+		Rect2(2.2, hd - 2.0, 1.4, 1.6),            # where deliveries are left
+	]
 	# Bed
 	Kit.box(b, Vector3(2.0, 0.55, 3.0), Vector3(-hw + 1.6, 0.275, -hd + 2.0), Color(0.35, 0.3, 0.6))
 	Kit.box(b, Vector3(1.8, 0.2, 0.6), Vector3(-hw + 1.6, 0.65, -hd + 0.9), Color(0.95, 0.95, 0.95))
 	Kit.interactable(b, Vector3(-hw + 1.6, 1, -hd + 3.5), 2.0,
-		func(): return "Sleep" if Game.home_id == id else "",
-		func(): main.sleep_menu(h.sleep_quality))
+		func(): return "Sleep (quality %d%%)" % roundi(Game.bed_quality() * 100.0) if Game.home_id == id else "",
+		func(): main.sleep_menu(Game.bed_quality()))
 	_toilet(b, Vector3(hw - 1.2, 0, -hd + 1.0), id)
-	# Fridge
+	# Fridge, plus the kitchen this place comes with.
 	Kit.box(b, Vector3(0.9, 1.9, 0.8), Vector3(hw - 0.8, 0.95, 0.5), Color(0.92, 0.92, 0.95))
+	if h.kitchen >= 1:
+		Kit.box(b, Vector3(0.8, 0.92, 1.6), Vector3(hw - 0.7, 0.46, 1.8), Color(0.45, 0.33, 0.24))
+		Kit.box(b, Vector3(0.85, 0.04, 1.65), Vector3(hw - 0.7, 0.94, 1.8), Color(0.82, 0.8, 0.76), false)
+		if h.kitchen >= 2:
+			Kit.box(b, Vector3(0.8, 0.92, 0.75), Vector3(hw - 0.7, 0.46, 2.95), Color(0.93, 0.93, 0.94))
+			for bz in [2.78, 3.12]:
+				for bx in [-0.15, 0.15]:
+					Kit.cylinder(b, 0.08, 0.01, Vector3(hw - 0.7 + bx, 0.93, bz), Color(0.15, 0.15, 0.15), false)
+		else:
+			Kit.box(b, Vector3(0.4, 0.06, 0.4), Vector3(hw - 0.7, 0.99, 2.2), Color(0.15, 0.15, 0.15), false)
 	Kit.interactable(b, Vector3(hw - 1.8, 1, 0.5), 1.8,
 		func():
 			if Game.home_id != id:
 				return ""
 			if Game.fridge_meals <= 0:
 				return "Fridge is empty (buy groceries at a store register)"
-			return "Eat from fridge (%d meals left)" % Game.fridge_meals,
+			return "Eat %s (%d meals left)" % [GameData.KITCHEN_MEALS[Game.kitchen_tier()][0], Game.fridge_meals],
 		func():
-			if Game.home_id == id and Game.fridge_meals > 0:
-				Game.fridge_meals -= 1
-				Game.eat("a home-cooked meal", 50.0))
+			if Game.home_id == id:
+				Game.eat_at_home())
 	# Couch / TV for flavor
 	Kit.box(b, Vector3(2.6, 0.7, 0.9), Vector3(0, 0.35, -hd + 1.0), Color(0.45, 0.3, 0.25))
 	# Leasing desk by the door
@@ -951,10 +974,16 @@ func _home(lot: Node3D, id: String, bname: String, size: Vector3, color: Color, 
 	Kit.interactable(b, Vector3(-hw + 1.4, 1, hd - 3.0), 2.0,
 		func(): return "Your lease: %s ($%.0f a month)" % [h.short, h.rent] if Game.home_id == id else "Lease info: " + h.short,
 		func(): _lease_menu(id))
+	# Furniture you buy goes here (see HomeDecor).
+	var furniture_root := Node3D.new()
+	furniture_root.name = "Furniture"
+	b.add_child(furniture_root)
 	var p := _place(h.short + " (housing)", lot, Vector3(0, 0, -setback + 1.0), "housing")
 	homes[id] = {"door": p.door, "curb": p.curb,
 		"inside": b.to_global(Vector3(0, 1, hd - 3.0)),
-		"parking": Transform3D(lot.global_transform.basis * Basis(Vector3.UP, PI / 2.0), _curb(lot) + Vector3(0, 0.8, 0))}
+		"parking": Transform3D(lot.global_transform.basis * Basis(Vector3.UP, PI / 2.0), _curb(lot) + Vector3(0, 0.8, 0)),
+		"building": b, "half": Vector2(hw, hd), "reserved": reserved, "furniture_root": furniture_root,
+		"box_spot": Vector3(2.9, 0, hd - 1.2)}
 
 
 func _lease_menu(id: String) -> void:
@@ -966,4 +995,5 @@ func _lease_menu(id: String) -> void:
 		var move_in: float = h.deposit + h.rent
 		opts.append({"text": "Sign lease: $%.0f deposit + $%.0f first rent" % [h.deposit, h.rent],
 			"cb": func(): Game.sign_lease(id), "disabled": Game.money < move_in})
-	main.hud.show_menu("%s\nRent $%.0f / month  |  Sleep quality %d%%" % [h.name, h.rent, h.sleep_quality * 100], opts)
+	main.hud.show_menu("%s\nNeighborhood: %s\n%s\nRent $%.0f / month  |  Quiet: %d%%  |  %s  |  Room for %d pieces of furniture" % [
+		h.name, h.area, h.blurb, h.rent, h.sleep_quality * 100, GameData.KITCHEN_NAMES[h.kitchen], h.space], opts)

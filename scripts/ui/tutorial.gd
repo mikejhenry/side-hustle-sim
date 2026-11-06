@@ -117,7 +117,7 @@ func _build_steps() -> void:
 		_visit("Jungle Flex", "Jungle Flex Station",
 			func(): return "Next: the Jungle Flex station. Accept a delivery block in the app, scan packages here, then deliver the whole route."),
 		_visit("Dottie", "Home sweet home",
-			func(): return "Last stop: your rented room at Dottie's. Sleep in your bed, eat from the fridge, use the toilet. Rent, phone and insurance are due once a month (they auto-pay if you have the money; check the Bank app). Bigger places to rent have leasing desks."),
+			func(): return "Last stop: your rented room at Dottie's. Sleep in your bed, eat from the fridge, use the toilet. Buy furniture in the Wayfare app to sleep better and eat cheaper. Rent, phone and insurance are due once a month (they auto-pay if you have the money; check the Bank app). Bigger places to rent have leasing desks."),
 		{"title": "Go to work",
 			"text": func(): return "Open your phone (%s), open DoorDish and tap GO ONLINE. Offers pop up as messages. Accept one, follow the GPS, and use the phone when the job asks.\n\nTip: rain and snow make roads slippery, but delivery apps pay more. The Me app sells a phone upgrade that shows cops and traffic cameras on your map." % k("Tab", "Y"),
 			"done": func(): return Gigs.online.values().has(true)},

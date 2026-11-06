@@ -52,6 +52,25 @@ use phone -> deliver -> get paid -> eat / pee / gas / oil as needed -> sleep -> 
 | Lakeview Towers 2BR | $2,400 | $1,200 + rent | 115% |
 | Brandywine Hills house | $3,900 | $7,500 + rent | 130% |
 
+Each home also has a neighborhood, a built-in kitchen and a furniture limit:
+
+| Home | Neighborhood | Kitchen | Space |
+| --- | --- | --- | --- |
+| Dottie's room | Elsmore Flats | Mini fridge only | 4 pieces |
+| Maple Court studio | Trolly Squared | Kitchenette | 7 pieces |
+| Lakeview 2BR | Christeena Riverfront | Full kitchen | 11 pieces |
+| Brandywine house | Brandywine Hills | Full kitchen | 18 pieces |
+
+### Home goods (Wayfare app)
+Bought on the phone, delivered in boxes by your door, placed by hand (a see-through copy follows
+you; R turns it, E sets it down; it can't block built-ins, the doorway, or other pieces).
+- **Beds** multiply the home's sleep quality: futon x1.10 ($180), queen x1.22 ($650), smart bed x1.38 ($1,850).
+- **Kitchen** tier is the best of the home's kitchen and your appliances (microwave = kitchenette,
+  range = full kitchen). Groceries ($32) give 6 / 8 / 10 meals and a meal restores 38 / 50 / 62 hunger.
+- **Coffee maker**: +18 energy for $0.40.
+- **Decor** adds comfort points: +1.2% sleep quality each, up to +15%.
+- Resale is 40% of the price. Moving or eviction boxes everything up.
+
 ### Cars
 | Car | Price | MPG | Notes |
 | --- | --- | --- | --- |

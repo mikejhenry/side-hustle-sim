@@ -84,15 +84,25 @@ const CARS := {
 const CAR_ORDER := ["rustwagon", "civil", "pious", "passit", "voltz"]
 
 # --- Housing ------------------------------------------------------------------
+# area: the neighborhood. kitchen: built-in kitchen (0 = mini fridge only, 1 = kitchenette,
+# 2 = full kitchen). space: how many pieces of furniture fit. sleep_quality: how quiet it is.
 const HOMES := {
 	"room": {"name": "Rented room at Dottie's Boarding House", "short": "Dottie's room",
-		"rent": 950.0, "deposit": 0.0, "sleep_quality": 0.8},
+		"rent": 950.0, "deposit": 0.0, "sleep_quality": 0.8,
+		"area": "Elsmore Flats", "kitchen": 0, "space": 4,
+		"blurb": "Thin walls, a shared hallway, and Dottie's cat. A mini fridge and a lumpy twin bed."},
 	"studio": {"name": "Studio at Maple Court Apartments", "short": "Maple Court studio",
-		"rent": 1500.0, "deposit": 450.0, "sleep_quality": 1.0},
+		"rent": 1500.0, "deposit": 450.0, "sleep_quality": 1.0,
+		"area": "Trolly Squared", "kitchen": 1, "space": 7,
+		"blurb": "Your own door, a kitchenette with a hot plate, and bars on the corner."},
 	"twobr": {"name": "2-bed apartment at Lakeview Towers", "short": "Lakeview 2BR",
-		"rent": 2400.0, "deposit": 1200.0, "sleep_quality": 1.15},
+		"rent": 2400.0, "deposit": 1200.0, "sleep_quality": 1.15,
+		"area": "Christeena Riverfront", "kitchen": 2, "space": 11,
+		"blurb": "Quiet floors, a full kitchen, and a river view if you lean out the window."},
 	"house": {"name": "3-bed house in Brandywine Hills", "short": "Brandywine house",
-		"rent": 3900.0, "deposit": 7500.0, "sleep_quality": 1.3},
+		"rent": 3900.0, "deposit": 7500.0, "sleep_quality": 1.3,
+		"area": "Brandywine Hills", "kitchen": 2, "space": 18,
+		"blurb": "Tree-lined suburbs, a big full kitchen, and room for everything you own."},
 }
 const HOME_ORDER := ["room", "studio", "twobr", "house"]
 const PHONE_BILL := 85.0
@@ -118,6 +128,55 @@ const RECKLESS_FINE := 180.0
 const RED_LIGHT_FINE := 150.0
 const HOME_GROCERIES_PRICE := 32.0
 const HOME_GROCERIES_MEALS := 6
+
+# --- Home goods (the Wayfare app) ---------------------------------------------------
+# Bought on your phone, delivered to your home in a box, and placed by you.
+# kind "bed": sleep multiplier. "kitchen": kitchen tier it gives (the best one counts).
+# "coffee": brew coffee at home. "decor": comfort points (they add up, see COMFORT_*).
+# size: footprint (x = width, z = depth) and height in meters.
+const KITCHEN_NAMES := ["Mini fridge only", "Kitchenette", "Full kitchen"]
+const KITCHEN_EXTRA_MEALS := [0, 2, 4]      # extra meals per grocery run
+const KITCHEN_MEALS := [                    # [label, hunger, game minutes]
+	["a cold sandwich from the fridge", 38.0, 5.0],
+	["microwaved leftovers", 50.0, 10.0],
+	["a home-cooked meal", 62.0, 25.0],
+]
+const COMFORT_PER_POINT := 0.012            # sleep quality per comfort point
+const COMFORT_MAX_BONUS := 0.15
+const FURNITURE_RESALE := 0.4
+const HOME_COFFEE_PRICE := 0.4
+const FURNITURE := {
+	"futon": {"name": "Fold-Out Futon", "kind": "bed", "price": 180.0, "sleep": 1.1,
+		"size": Vector3(2.0, 0.8, 1.0), "blurb": "Better than Dottie's lumpy twin. Barely."},
+	"queen_bed": {"name": "Ikeo SNORRVIK Queen Bed", "kind": "bed", "price": 650.0, "sleep": 1.22,
+		"size": Vector3(1.7, 1.0, 2.2), "blurb": "Some assembly required. 214 pieces. One Allen key."},
+	"smart_bed": {"name": "Slumber Numbr Smart Bed", "kind": "bed", "price": 1850.0, "sleep": 1.38,
+		"size": Vector3(1.9, 1.1, 2.3), "blurb": "Your sleep number is 'yes'."},
+	"microwave": {"name": "Microwave on a Cart", "kind": "kitchen", "price": 95.0, "kitchen": 1,
+		"size": Vector3(0.7, 1.2, 0.5), "blurb": "Leftovers become a meal. Works as a kitchenette."},
+	"stove": {"name": "Electric Range + Pots", "kind": "kitchen", "price": 620.0, "kitchen": 2,
+		"size": Vector3(0.8, 0.95, 0.7), "blurb": "A full kitchen anywhere: groceries go further."},
+	"coffee_maker": {"name": "Mr. Coffy Drip Maker", "kind": "coffee", "price": 45.0,
+		"size": Vector3(0.7, 1.1, 0.5), "blurb": "Brew coffee at home for 40 cents a cup."},
+	"couch": {"name": "Secondhand Sectional", "kind": "decor", "price": 260.0, "comfort": 3,
+		"size": Vector3(2.2, 0.9, 0.95), "blurb": "Only one mystery stain."},
+	"tv": {"name": "55\" Sansong TV + Stand", "kind": "decor", "price": 420.0, "comfort": 3,
+		"size": Vector3(1.5, 1.3, 0.45), "blurb": "Unwind with reruns of Delivery Wars."},
+	"rug": {"name": "Shag Area Rug", "kind": "decor", "price": 70.0, "comfort": 1,
+		"size": Vector3(2.4, 0.02, 1.6), "blurb": "Ties the room together."},
+	"plant": {"name": "Fiddle-Leaf Fig", "kind": "decor", "price": 40.0, "comfort": 1,
+		"size": Vector3(0.6, 1.5, 0.6), "blurb": "You will forget to water it."},
+	"lamp": {"name": "Arc Floor Lamp", "kind": "decor", "price": 55.0, "comfort": 1,
+		"size": Vector3(0.5, 1.8, 0.5), "blurb": "Warm light instead of the overhead buzz."},
+	"bookshelf": {"name": "BILLIG Bookshelf", "kind": "decor", "price": 90.0, "comfort": 1,
+		"size": Vector3(1.0, 1.9, 0.35), "blurb": "For the books you'll read someday."},
+	"desk": {"name": "Desk + Gamer Chair", "kind": "decor", "price": 210.0, "comfort": 2,
+		"size": Vector3(1.4, 1.3, 1.2), "blurb": "Plan your hustle like a CEO."},
+	"art": {"name": "'Live Laugh Hustle' Framed Print", "kind": "decor", "price": 35.0, "comfort": 1,
+		"size": Vector3(0.8, 1.5, 0.5), "blurb": "Motivational. Allegedly."},
+}
+const FURNITURE_ORDER := ["futon", "queen_bed", "smart_bed", "microwave", "stove", "coffee_maker",
+	"couch", "tv", "desk", "bookshelf", "lamp", "plant", "rug", "art"]
 
 # --- Gig apps -------------------------------------------------------------------
 # peaks: [start_hour, end_hour, demand multiplier]
