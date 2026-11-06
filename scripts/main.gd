@@ -20,7 +20,13 @@ var traffic: Traffic
 var traffic_control: TrafficControl
 var weather_fx: WeatherFX
 var pedestrians: Pedestrians
+var construction: Construction
+var parked_cars: ParkedCars
+var birds: Birds
+var ambience: Ambience
 var pause_menu: PauseMenu
+var transit: Transit
+var needs_fx: NeedsFX
 var tutorial: Tutorial
 var decor: HomeDecor
 var auto_tutorial := true     # tests turn this off
@@ -46,6 +52,7 @@ func _ready() -> void:
 	player.yaw = PI   # face the street
 
 	car = Car.new()
+	car.main = self
 	add_child(car)
 	car.teleport(town.car_spawn)
 	_enter_point = Kit.interactable(car, Vector3(1.4, 1, 0.2), 2.6,
@@ -84,6 +91,15 @@ func _ready() -> void:
 	pedestrians.main = self
 	add_child(pedestrians)
 	pedestrians.build()
+	_build_city_life()
+	transit = Transit.new()
+	transit.town = town
+	transit.main = self
+	add_child(transit)
+	transit.build()
+	needs_fx = NeedsFX.new()
+	needs_fx.main = self
+	add_child(needs_fx)
 	tutorial = Tutorial.new()
 	tutorial.main = self
 	add_child(tutorial)
@@ -95,22 +111,43 @@ func _ready() -> void:
 	decor.town = town
 	add_child(decor)
 
-	var amb := AudioStreamPlayer.new()
-	amb.stream = Sfx.get_stream("ambience")
-	amb.volume_db = -20.0
-	add_child(amb)
-	amb.play()
 	Game.notified.connect(_notify_sound)
 	Gigs.offer_received.connect(func(_o): Sfx.play(self, "ping", -2.0))
 
 	player.set_active(true)
+	apply_view_settings()
 	Game.home_changed.connect(_on_home_changed)
+	Game.slept.connect(func(_h): _queue_autosave())
+	Game.day_changed.connect(func(_d): _queue_autosave())
 	update_mouse_mode()
 	if auto_tutorial and not Tutorial.is_done():
 		tutorial.start()
 	else:
 		hud.toast("Welcome to New Castlewood County! %s shows the controls. %s opens your phone." % [Game.key("help"), Game.key("phone")], "info")
 		hud.toast("Rent is due at the end of the month and your Punta needs an oil change. Time to hustle.", "warn")
+
+
+## Road work, parked cars, birds and the district soundscape.
+func _build_city_life() -> void:
+	parked_cars = ParkedCars.new()
+	parked_cars.town = town
+	parked_cars.main = self
+	add_child(parked_cars)
+	parked_cars.build()
+	construction = Construction.new()
+	construction.town = town
+	construction.main = self
+	add_child(construction)
+	construction.build()
+	birds = Birds.new()
+	birds.town = town
+	birds.main = self
+	add_child(birds)
+	birds.build()
+	ambience = Ambience.new()
+	ambience.town = town
+	ambience.main = self
+	add_child(ambience)
 
 
 func _notify_sound(_text: String, kind: String) -> void:
@@ -247,7 +284,7 @@ func enter_car() -> void:
 	Game.in_car = true
 	player.set_active(false)
 	car.set_driver(true)
-	car.set_headlights(Game.is_night())
+	car.set_headlights(Game.lights_on())
 
 
 func exit_car() -> void:
@@ -284,6 +321,10 @@ func _process(delta: float) -> void:
 				best = it
 				best_d = d
 				best_prompt = p
+	# Looking at a dashboard control beats anything outside the car.
+	if driving and car.dash.focused:
+		best = car.dash.focused
+		best_prompt = best.get_prompt()
 	_current = best
 	if decor.placing:
 		_current = null
@@ -298,8 +339,11 @@ func _process(delta: float) -> void:
 		hud.set_prompt("")
 
 	# Carrying an order?
-	var j := Gigs.job
-	player.set_carrying(carry_preview if carry_preview != "" else carry_kind(j))
+	var carrying := carry_preview
+	for j in [Gigs.job] + Gigs.jobs:
+		if carrying == "":
+			carrying = carry_kind(j)
+	player.set_carrying(carrying)
 	player.set_phone_visible(phone.is_open)
 
 	# GPS beacon: active job first, then map waypoint.
@@ -310,6 +354,9 @@ func _process(delta: float) -> void:
 		t = tutorial.target()
 	beacon.visible = not t.is_empty()
 	var obj := Gigs.status_text()
+	var others := Gigs.others_text()
+	if others != "":
+		obj += "\n" + others
 	if not t.is_empty():
 		beacon.global_position = t.pos
 		var dist := pos.distance_to(t.pos)
@@ -320,7 +367,7 @@ func _process(delta: float) -> void:
 	_update_gps(delta, t)
 	_update_sky()
 	# With a gamepad, the stick and A button drive the phone's menus, not the character.
-	var locked: bool = hud.menu_open or (phone.is_open and Game.using_pad)
+	var locked: bool = hud.menu_open or traveling or (phone.is_open and Game.using_pad)
 	player.input_locked = locked
 	car.input_locked = locked
 
@@ -348,41 +395,55 @@ func _update_gps(delta: float, t: Dictionary) -> void:
 func _update_sky() -> void:
 	var m := Game.minute
 	var e := (m / 1440.0 - 0.25) * TAU   # sun elevation angle: 6AM = 0, noon = PI/2
-	var day_amount := clampf(sin(e) * 2.5 + 0.3, 0.0, 1.0)
+	var day_amount := Game.daylight()
+	# Dawn and dusk: an orange-pink glow on the horizon while the sun is near it.
+	var twilight := clampf(1.0 - absf(sin(e)) * 3.5, 0.0, 1.0)
 	if sin(e) > -0.1:
 		sun.rotation = Vector3(-clampf(e, 0.05, PI - 0.05), deg_to_rad(-35.0), 0)
 		sun.light_energy = 0.85 * day_amount
-		sun.light_color = Color(1.0, 0.75, 0.55).lerp(Color(1.0, 0.97, 0.92), clampf(sin(e) * 2.0, 0.0, 1.0))
+		sun.light_color = Color(1.0, 0.62, 0.4).lerp(Color(1.0, 0.97, 0.92), clampf(sin(e) * 2.0, 0.0, 1.0))
 	else:
 		sun.rotation = Vector3(-0.9, deg_to_rad(30.0), 0)   # moonlight
-		sun.light_energy = 0.06
+		sun.light_energy = 0.07
 		sun.light_color = Color(0.6, 0.7, 1.0)
-	env.background_color = Color(0.03, 0.03, 0.07).lerp(Color(0.55, 0.68, 0.85), day_amount)
+	var dusk := Color(0.95, 0.5, 0.32)
+	env.background_color = Color(0.03, 0.03, 0.07).lerp(Color(0.55, 0.68, 0.85), day_amount).lerp(dusk * 0.7, twilight * 0.35)
+	var ambient := Color(0.22, 0.26, 0.42).lerp(Color(0.62, 0.66, 0.72), day_amount).lerp(Color(0.7, 0.5, 0.45), twilight * 0.25)
 	if low_graphics:
-		env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
+		env.ambient_light_color = ambient
 		env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
 		if weather_fx:
 			weather_fx.apply_sky(sun, env, null)
 		_update_night()
 		return
-	sky_mat.sky_top_color = Color(0.01, 0.01, 0.04).lerp(Color(0.3, 0.5, 0.85), day_amount)
-	sky_mat.sky_horizon_color = Color(0.04, 0.04, 0.08).lerp(Color(0.75, 0.82, 0.9), day_amount)
+	sky_mat.sky_top_color = Color(0.01, 0.01, 0.04).lerp(Color(0.3, 0.5, 0.85), day_amount).lerp(Color(0.25, 0.2, 0.4), twilight * 0.3)
+	sky_mat.sky_horizon_color = Color(0.04, 0.04, 0.08).lerp(Color(0.75, 0.82, 0.9), day_amount).lerp(dusk, twilight * 0.65)
 	sky_mat.ground_horizon_color = sky_mat.sky_horizon_color
 	sky_mat.ground_bottom_color = Color(0.05, 0.05, 0.06).lerp(Color(0.3, 0.3, 0.3), day_amount)
-	env.ambient_light_color = Color(0.25, 0.28, 0.45).lerp(Color(0.62, 0.66, 0.72), day_amount)
+	env.ambient_light_color = ambient
 	env.ambient_light_energy = lerpf(0.25, 0.55, day_amount)
 	if weather_fx:
 		weather_fx.apply_sky(sun, env, sky_mat)
 	_update_night()
 
 
+var _glow := -1.0
+
+
 func _update_night() -> void:
-	var night := Game.is_night()
+	# Windows fade in through dusk (and out at dawn) instead of snapping on.
+	var glow := snappedf(clampf((0.6 - Game.daylight()) / 0.5, 0.0, 1.0), 0.02)
+	if glow != _glow:
+		_glow = glow
+		Kit.set_window_glow(glow)
+	var night := Game.lights_on()
 	if night != _was_night:
 		_was_night = night
 		town.set_night(night)
-		if driving:
+		traffic.set_night(night)
+		if driving and car.headlights_on != night:
 			car.set_headlights(night)
+			hud.toast("Headlights %s (%s to toggle)." % ["on" if night else "off", Game.key("headlights")], "info")
 
 
 # --- Input ---------------------------------------------------------------------------
@@ -416,7 +477,7 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("save_game"):
 		Game.save_game()
 	elif event.is_action_pressed("load_game"):
-		load_game()
+		load_game(Game.latest_slot())
 	elif event.is_action_pressed("time_warp"):
 		Game.time_multiplier = 10.0 if Game.time_multiplier == 1.0 else 1.0
 		hud.toast("Time speed: %dx" % Game.time_multiplier, "info")
@@ -431,6 +492,8 @@ func _input(event: InputEvent) -> void:
 		hud.toast("Weather: %s" % ("forecast" if Game.weather_override == "" else Game.weather_override), "info")
 	elif event.is_action_pressed("camera_toggle") and driving:
 		car.toggle_camera()
+	elif driving and not hud.menu_open and _car_control(event):
+		pass
 	elif event.is_action_pressed("headlights") and driving:
 		car.set_headlights(not car.headlights_on)
 	elif event.is_action_pressed("mirrors") and driving:
@@ -439,12 +502,37 @@ func _input(event: InputEvent) -> void:
 		hud.toast("Mirrors: %s (%s to change)" % [["in the car", "in the car + on screen", "off"][Game.mirror_mode], Game.key("mirrors")], "info")
 
 
+## Turn signals, hazards, wipers and radio keys while driving. True if the event was one.
+func _car_control(event: InputEvent) -> bool:
+	var d: Dashboard = car.dash
+	if event.is_action_pressed("signal_left"):
+		d.set_signal("left")
+	elif event.is_action_pressed("signal_right"):
+		d.set_signal("right")
+	elif event.is_action_pressed("signal_cycle") and not phone.is_open:
+		d.cycle_signal()
+	elif event.is_action_pressed("hazards"):
+		d.toggle_hazards()
+	elif event.is_action_pressed("wipers"):
+		d.cycle_wipers()
+	elif event.is_action_pressed("radio_next"):
+		car.radio.next_station()
+	elif event.is_action_pressed("radio_prev"):
+		car.radio.prev_station()
+	else:
+		return false
+	return true
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact") and not hud.menu_open and not decor.placing:
 		if is_instance_valid(_current):
 			_current.use()
 		elif driving:
 			exit_car()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and driving and car.dash.focused and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		car.dash.focused.use()
 	elif event is InputEventMouseButton and event.pressed and not phone.is_open and not hud.menu_open and not pause_menu.is_open:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -539,9 +627,11 @@ func call_tow() -> void:
 	hud.toast("Your car was towed to Lube & Tube. That took 40 minutes.", "info")
 
 
-func load_game() -> void:
-	if not Game.load_game():
+## Loads a save slot (see Game.slot_path). -1 = the slot you last saved to or loaded.
+func load_game(slot := -1) -> void:
+	if not Game.load_game(slot):
 		return
+	map_waypoint = {}
 	if driving:
 		driving = false
 		car.set_driver(false)
@@ -555,3 +645,91 @@ func load_game() -> void:
 
 func _on_home_changed() -> void:
 	pass
+
+
+# --- New game, autosave -----------------------------------------------------------------
+
+func new_game() -> void:
+	if driving:
+		driving = false
+		car.set_driver(false)
+	decor.cancel()
+	Game.new_game()
+	Gigs.go_offline_all()
+	Gigs.reset_jobs()
+	for id in Gigs.ratings:
+		Gigs.ratings[id] = 4.85
+	map_waypoint = {}
+	phone.close()
+	player.global_position = town.spawn_point
+	player.yaw = PI
+	player.set_active(true)
+	car.teleport(town.car_spawn)
+	refresh_gps()
+	hud.toast("New game. Day 1, back at Dottie's with $%.0f." % Game.money, "info")
+
+
+var _autosave_queued := false
+
+
+## Saves to the autosave slot once things settle (sleeping fires both day_changed and slept).
+func _queue_autosave() -> void:
+	if not Game.autosave or _autosave_queued:
+		return
+	_autosave_queued = true
+	(func():
+		_autosave_queued = false
+		Game.save_game(Game.AUTOSAVE_SLOT)).call_deferred()
+
+
+# --- Settings that live on the cameras ----------------------------------------------------
+
+func apply_view_settings() -> void:
+	player.camera.fov = Game.fov
+	car.fp_camera.fov = Game.fov + 8.0
+	car.chase_camera.fov = Game.fov + 5.0
+
+
+# --- Fast travel (taxi, bus) and dropped pins --------------------------------------------
+
+var traveling := false
+
+
+## Fades out, moves the clock on by `minutes`, puts you at `to` (on foot), and fades back in.
+func travel(to: Vector3, minutes: float, riding_text: String, arrive_text: String) -> void:
+	if traveling:
+		return
+	traveling = true
+	phone.close()
+	hud.close_menu()
+	if pause_menu.is_open:
+		pause_menu.close()
+	player.input_locked = true
+	await hud.fade_out(riding_text)
+	Game.advance(minutes)
+	player.global_position = to
+	player.velocity = Vector3.ZERO
+	if not map_waypoint.is_empty() and Vector2(to.x, to.z).distance_to(Vector2(map_waypoint.pos.x, map_waypoint.pos.z)) < 25.0:
+		map_waypoint = {}
+	refresh_gps()
+	await get_tree().create_timer(0.9).timeout
+	hud.fade_in()
+	traveling = false
+	update_mouse_mode()
+	hud.toast(arrive_text, "info")
+
+
+## A GPS pin anywhere on the map: snapped to the sidewalk of the nearest road.
+func drop_pin(at: Vector3) -> void:
+	var snap: Dictionary = gps._snap(Vector3(at.x, 0, at.z))
+	if snap.is_empty():
+		return
+	var q: Vector3 = snap.point
+	var off := Vector3(at.x - q.x, 0, at.z - q.z)
+	if off.length() < 0.5:
+		var pts: PackedVector3Array = gps._edges[snap.edge].pts
+		var along := (pts[pts.size() - 1] - pts[0]).normalized()
+		off = along.cross(Vector3.UP)
+	var pos := q + off.normalized() * 8.6
+	pos.y = 0.6
+	set_waypoint(pos, "Pin on %s" % gps._edges[snap.edge].name)

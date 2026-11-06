@@ -9,6 +9,9 @@ const MOUSE_SENS := 0.0025
 
 signal crashed(strength: float)
 
+var main: Node                 # set by main.gd (the GPS mount reads its route)
+var radio: Radio
+var dash: Dashboard
 var driver_active := false
 var input_locked := false
 var chase_cam := false
@@ -111,6 +114,16 @@ func _ready() -> void:
 	_engine.unit_size = 6.0
 	_engine.volume_db = -10.0
 	add_child(_engine)
+	_skid = AudioStreamPlayer3D.new()
+	_skid.stream = Sfx.get_stream("skid")
+	_skid.position = Vector3(0, 0.3, 0)
+	_skid.unit_size = 6.0
+	add_child(_skid)
+	radio = Radio.new()
+	add_child(radio)
+	dash = Dashboard.new()
+	dash.car = self
+	add_child(dash)
 	apply_model()
 	Game.car_changed.connect(apply_model)
 	_last_pos = global_position
@@ -144,6 +157,19 @@ func _place_mirror_cams() -> void:
 	var sm: Vector3 = Game.car().get("side_mirror", Vector3(sz.x / 2.0 + 0.12, 1.08, 0.7))
 	_mirror_cams.left[1] = Transform3D(Basis(Vector3.UP, -0.32) * Basis(Vector3.RIGHT, -0.05), sm)
 	_mirror_cams.right[1] = Transform3D(Basis(Vector3.UP, 0.32) * Basis(Vector3.RIGHT, -0.05), Vector3(-sm.x, sm.y, sm.z))
+
+
+## The windshield glass in car space (top-left, top-right, bottom-right, bottom-left, as the
+## driver sees it). Rain drops are drawn on it. Cars can override with "windshield":
+## [top center, top half-width, bottom center, bottom half-width].
+func windshield_corners() -> Array:
+	var c := Game.car()
+	var eye: Vector3 = c.get("eye", Vector3(0.38, 1.24, -0.15))
+	var w: Array = c.get("windshield", [Vector3(-0.05, eye.y + 0.14, eye.z + 0.5), 0.56, Vector3(-0.05, eye.y - 0.14, eye.z + 0.9), 0.64])
+	var top: Vector3 = w[0]
+	var bottom: Vector3 = w[2]
+	# The driver looks along +Z, so their left is +X.
+	return [top + Vector3(w[1], 0, 0), top - Vector3(w[1], 0, 0), bottom - Vector3(w[3], 0, 0), bottom + Vector3(w[3], 0, 0)]
 
 
 ## True while the mirror cameras should render (first person, mirrors not switched off).
@@ -320,17 +346,18 @@ func apply_model() -> void:
 	_build_mirror_glass(sz)
 	_glass_on = not mirrors_visible()   # force a refresh
 	_steering_wheel = null
+	dash.build(c)
 	if c.has("model"):
 		return   # real models bring their own interior
 	# Interior (seen in first person): dashboard, gauges, steering wheel, seats.
 	var dash := Kit.mat(Color(0.1, 0.1, 0.11))
-	Kit.box(_visual, Vector3(sz.x - 0.2, 0.22, 0.55), Vector3(0, 0.9, 0.78), dash, false)
+	# Its back face sits just past the radio console and phone mount (see Dashboard).
+	Kit.box(_visual, Vector3(sz.x - 0.2, 0.22, 0.45), Vector3(0, 0.9, 0.83), dash, false)
 	var hood := Kit.box(_visual, Vector3(sz.x - 0.2, 0.04, 0.4), Vector3(0, 1.0, 0.6), dash, false)
 	hood.rotation.x = -0.2
 	Kit.box(_visual, Vector3(0.5, 0.14, 0.05), Vector3(0.38, 1.02, 0.66), Color(0.02, 0.02, 0.03), false)
 	Kit.box(_visual, Vector3(0.12, 0.08, 0.02), Vector3(0.28, 1.03, 0.635), Color(0.3, 0.8, 1.0), false, 1.5)
 	Kit.box(_visual, Vector3(0.12, 0.08, 0.02), Vector3(0.48, 1.03, 0.635), Color(1.0, 0.6, 0.2), false, 1.5)
-	Kit.box(_visual, Vector3(0.3, 0.2, 0.03), Vector3(0.0, 0.98, 0.6), Color(0.05, 0.08, 0.1), false, 0.4)
 	_steering_wheel = Node3D.new()
 	_steering_wheel.position = Vector3(0.38, 1.0, 0.5)
 	_steering_wheel.rotation.x = -0.35
@@ -387,6 +414,7 @@ func _fit_wheels(model: Node3D) -> void:
 
 func set_driver(on: bool) -> void:
 	driver_active = on
+	radio.active = on
 	_look_yaw = 0.0
 	_look_pitch = -0.08
 	if on:
@@ -418,26 +446,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look_yaw = clampf(_look_yaw - event.relative.x * MOUSE_SENS * Game.mouse_sens, -1.9, 1.9)
-		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens, -0.8, 0.5)
+		_look_pitch = clampf(_look_pitch - event.relative.y * MOUSE_SENS * Game.mouse_sens * Game.look_y_sign(), -0.8, 0.5)
 
 
 func _physics_process(delta: float) -> void:
 	var c := Game.car()
 	var fwd_speed := linear_velocity.dot(global_basis.z)
 	var spd := linear_velocity.length()
-	for w in _wheels:
-		w.wheel_friction_slip = 3.0 * Game.grip_factor()
+	var throttle := 0.0
+	if driver_active and not input_locked:
+		throttle = maxf(Input.get_action_strength("move_forward"), Input.get_action_strength("throttle"))
+	_update_traction(delta, throttle)
 
 	var hard := 0.0
 	if driver_active and not input_locked:
-		var throttle := maxf(Input.get_action_strength("move_forward"), Input.get_action_strength("throttle"))
 		var back := maxf(Input.get_action_strength("move_back"), Input.get_action_strength("brake_reverse"))
 		var steer_in := Input.get_axis("move_right", "move_left")
 		if Game.energy < 15.0:
 			# Drowsy driving: the car wanders.
 			steer_in += sin(Time.get_ticks_msec() * 0.0011) * 0.35 * (1.0 - Game.energy / 15.0)
 		var limit := lerpf(STEER_LIMIT, 0.16, clampf(spd / 30.0, 0.0, 1.0))
-		steering = move_toward(steering, steer_in * limit, 2.2 * delta)
+		# On snow the wheel feels vague: steering reacts more slowly.
+		steering = move_toward(steering, steer_in * limit, lerpf(2.2, 1.5, snow_amount()) * delta)
 		var power: float = c.engine * Game.engine_factor()
 		var ef := 0.0
 		var br := 0.0
@@ -455,6 +485,10 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_pressed("handbrake"):
 			br = BRAKE_FORCE * 0.9
 			hard = 1.0
+		if hydroplaning > 0.0:
+			ef *= 0.25      # the tires are riding on water: gas does almost nothing
+			br *= 0.3
+		br *= brake_grip()
 		engine_force = ef
 		brake = br
 		if Input.is_action_just_pressed("horn"):
@@ -473,7 +507,7 @@ func _physics_process(delta: float) -> void:
 		var look := Game.look_stick()
 		if look != Vector2.ZERO or Game.using_pad:
 			var want_yaw := -look.x * NECK_YAW
-			var want_pitch := -0.08 - look.y * NECK_PITCH
+			var want_pitch := -0.08 - look.y * NECK_PITCH * Game.look_y_sign()
 			var rate := (5.0 if look != Vector2.ZERO else 3.5) * Game.pad_sens
 			var k := 1.0 - exp(-rate * delta)
 			_look_yaw = lerpf(_look_yaw, want_yaw, k)
@@ -508,6 +542,112 @@ func _physics_process(delta: float) -> void:
 			reset_upright()
 	else:
 		_flip_timer = 0.0
+
+
+# --- Traction: tires, rain and snow -------------------------------------------------
+# Grip comes from Game.grip_factor() (tread and weather). On top of that, snow lets the rear
+# step out (more so on the gas), and standing water on wet roads can make the car hydroplane
+# above about 40 mph (lower with worn tires): for a moment the steering and gas barely work.
+
+const BASE_FRICTION := 3.0
+const HYDRO_CELL := 9.0          # metres; some cells of a wet road hold standing water
+var hydroplaning := 0.0          # seconds of hydroplaning left
+var slip_speed := 0.0            # how fast the car is sliding sideways, m/s
+var _in_puddle := false
+var _skid: AudioStreamPlayer3D
+var _skid_vol := -40.0
+
+
+## 0..1, how much snow is on the road.
+func snow_amount() -> float:
+	return Game.weather_amount if Game.weather == "snow" else 0.0
+
+
+## 0..1, how wet the road is (rain or a storm).
+func wet_amount() -> float:
+	return Game.weather_amount * (1.25 if Game.weather == "storm" else 1.0) if Game.weather in ["rain", "storm"] else 0.0
+
+
+## The speed (mph) above which standing water can make the car hydroplane. Worn tires
+## can't push the water away, so they hydroplane sooner.
+func hydroplane_mph() -> float:
+	var worn := 1.0 - clampf(Game.tire_tread / 100.0, 0.0, 1.0)
+	return (42.0 if Game.weather == "rain" else 38.0) - 12.0 * worn
+
+
+## How much of the brakes' bite the road allows: wet roads a little less, snow a lot less.
+func brake_grip() -> float:
+	var k := {"rain": 0.88, "storm": 0.82, "snow": 0.5}.get(Game.weather, 1.0) as float
+	return lerpf(1.0, k, Game.weather_amount)
+
+
+## Whether a spot on the road has standing water right now (patches, more in a storm).
+func puddle_at(p: Vector3) -> bool:
+	var wet := wet_amount()
+	if wet < 0.25:
+		return false
+	var cell := Vector2i(floori(p.x / HYDRO_CELL), floori(p.z / HYDRO_CELL))
+	var h := float(absi(hash(cell)) % 1000) / 1000.0
+	return h < 0.22 * wet
+
+
+## True when going fast enough on a wet road that a puddle could make you hydroplane.
+func hydroplane_risk() -> bool:
+	return wet_amount() >= 0.25 and speed_mph() > hydroplane_mph()
+
+
+func _update_traction(delta: float, throttle: float) -> void:
+	var g := Game.grip_factor()
+	var snow := snow_amount()
+	var front := BASE_FRICTION * g
+	# Snow: the driven rear wheels spin and step out, worst on the gas.
+	var rear := front * (1.0 - 0.22 * snow - 0.25 * snow * throttle)
+	slip_speed = absf(linear_velocity.dot(global_basis.x)) if _on_ground() else 0.0
+
+	var puddle := puddle_at(global_position)
+	if puddle and not _in_puddle and hydroplane_risk() and hydroplaning <= 0.0:
+		var over := speed_mph() - hydroplane_mph()
+		hydroplaning = clampf(0.6 + over * 0.08, 0.6, 1.8)
+		# The car twitches as one side hits the water first.
+		apply_torque_impulse(Vector3.UP * mass * randf_range(-0.6, 0.6))
+		if driver_active:
+			Game.notify("Hydroplaning! Ease off the gas and keep the wheel straight.", "warn")
+	_in_puddle = puddle
+	if hydroplaning > 0.0:
+		hydroplaning = maxf(0.0, hydroplaning - delta)
+		front = 0.45
+		rear = 0.4
+	for i in _wheels.size():
+		(_wheels[i] as VehicleWheel3D).wheel_friction_slip = front if WHEEL_SPECS[i][2] else rear
+	_update_skid_sound(delta)
+
+
+func _on_ground() -> bool:
+	for w in _wheels:
+		if (w as VehicleWheel3D).is_in_contact():
+			return true
+	return false
+
+
+## Tire squeal when the car slides sideways (a slushy hiss on wet roads and snow, and a
+## rush of water while hydroplaning).
+func _update_skid_sound(delta: float) -> void:
+	if _skid == null:
+		return
+	var soft := snow_amount() > 0.2 or wet_amount() > 0.2
+	var amt := clampf((slip_speed - 2.0) / 5.0, 0.0, 1.0)
+	if hydroplaning > 0.0:
+		amt = maxf(amt, 0.8)
+	var want := lerpf(-40.0, -6.0 if not soft else -10.0, amt)
+	_skid_vol = lerpf(_skid_vol, want, clampf(delta * 10.0, 0.0, 1.0))
+	var on := driver_active and _skid_vol > -38.0
+	if on != _skid.playing:
+		if on:
+			_skid.play()
+		else:
+			_skid.stop()
+	_skid.volume_db = _skid_vol
+	_skid.pitch_scale = 0.55 if hydroplaning > 0.0 else (0.75 if soft else 1.0)
 
 
 func reset_upright() -> void:
