@@ -43,7 +43,7 @@ No assets to download: the town is built in code at startup, and the surface tex
 | Z / X | D-pad left (cycles left, right, off) | Turn signals |
 | B | dashboard | Hazard lights |
 | V | dashboard | Wipers: off / on / fast |
-| N / , | dashboard | Radio: next / previous station (and off) |
+| N / , | L3 (while driving) | Radio: next / previous station (and off) |
 | Look at a dash button + E or click | Look + X | Use the dashboard (radio, wipers, hazards, GPS mount) |
 | Esc | Start | Pause menu (resume, map, save/load slots, settings, controls, tutorial, new game, quit) |
 | F1 | Back | Controls |

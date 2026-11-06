@@ -901,14 +901,14 @@ func _setup_input() -> void:
 	_bind("camera_toggle", [KEY_C], [JOY_BUTTON_LEFT_SHOULDER])
 	_bind("mirrors", [KEY_M], [JOY_BUTTON_DPAD_UP])
 	_bind("map", [KEY_G], [JOY_BUTTON_DPAD_RIGHT])
-	# Car controls. On a gamepad, D-pad left cycles the turn signals (left, right, off); the
-	# radio, wipers and hazards are on the dashboard (look at a control and press X).
+	# Car controls. On a gamepad, D-pad left cycles the turn signals (left, right, off) and L3
+	# changes the radio station; wipers and hazards are on the dashboard (look at one, press X).
 	_bind("signal_left", [KEY_Z])
 	_bind("signal_right", [KEY_X])
 	_bind("signal_cycle", [], [JOY_BUTTON_DPAD_LEFT])
 	_bind("hazards", [KEY_B])
 	_bind("wipers", [KEY_V])
-	_bind("radio_next", [KEY_N])
+	_bind("radio_next", [KEY_N], [JOY_BUTTON_LEFT_STICK])   # L3 sprints on foot, tunes in the car
 	_bind("radio_prev", [KEY_COMMA])
 	_bind("help", [KEY_F1], [JOY_BUTTON_BACK])
 	_bind("save_game", [KEY_F5])
@@ -950,7 +950,7 @@ const KEY_NAMES := {
 	"interact": ["E", "X"], "phone": ["Tab", "Y"], "pause": ["Esc", "Start"], "back": ["Esc", "B"],
 	"help": ["F1", "Back"], "mirrors": ["M", "D-pad up"], "map": ["G", "D-pad right"], "camera_toggle": ["C", "LB"],
 	"headlights": ["L", "RB"], "signal_left": ["Z", "D-pad left"], "signal_right": ["X", "D-pad left"],
-	"hazards": ["B", "the dash"], "wipers": ["V", "the dash"], "radio_next": ["N", "the dash"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
+	"hazards": ["B", "the dash"], "wipers": ["V", "the dash"], "radio_next": ["N", "L3"], "horn": ["H", "R3"], "reset_car": ["R", "D-pad down"],
 	"handbrake": ["Space", "A"], "sprint": ["Shift", "L3"], "jump": ["Space", "A"],
 	"gas": ["W", "RT"], "brake": ["S", "LT"], "move": ["WASD", "the left stick"],
 	"look": ["the mouse", "the right stick"], "graphics": ["F3", "the pause menu"],
